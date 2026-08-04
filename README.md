@@ -45,7 +45,11 @@ Identity   skills/zolander/SKILL.md  + Ed25519 key (toolkit/gen_identity.py)
 Memory     zol_sem (cosine 768) + zol_hier (lorentz 129), dual write by shared id
            layers L0/L1/L2 + salience decay in metadata (toolkit/zol_mem.py)
 Bridge     hs.mjs — thin Node CLI over the HyperspaceDB SDK
-Loop       (roadmap) LaunchAgent background loop, nightly "dream" consolidation
+Loop       zolander_loop.py — one-shot tick via launchd StartInterval (every 20 min)
+           + RunAtLoad. Integrity check -> heartbeat -> git scan -> diary. No LLM
+           calls in the tick (cheap, verifiable); enrichment belongs to the "dream".
+           Deliberately NOT a KeepAlive while-loop: launchd is the scheduler, so a
+           stuck tick can't wedge the daemon. See toolkit/LOOP_README.md.
 Peers      (roadmap) A2A bridge (guestbook / signed inbox)
 ```
 
