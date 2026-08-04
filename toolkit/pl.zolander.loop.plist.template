@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- TEMPLATE: replace <USER> with your macOS username, then:
+<!-- TEMPLATE: replace __USER__ with your macOS username, then:
      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/pl.zolander.loop.plist -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -10,7 +10,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/Users/<USER>/zolander/toolkit/zolander_loop.py</string>
+        <string>/Users/__USER__/zolander/toolkit/zolander_loop.py</string>
     </array>
 
     <key>StartInterval</key>
@@ -23,12 +23,12 @@
     <string>Background</string>
 
     <key>StandardOutPath</key>
-    <string>/Users/<USER>/zolander/logs/launchd.out.log</string>
+    <string>/Users/__USER__/zolander/logs/launchd.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/<USER>/zolander/logs/launchd.err.log</string>
+    <string>/Users/__USER__/zolander/logs/launchd.err.log</string>
 
     <key>WorkingDirectory</key>
-    <string>/Users/<USER>/zolander</string>
+    <string>/Users/__USER__/zolander</string>
 </dict>
 </plist>
