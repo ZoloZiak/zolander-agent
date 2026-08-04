@@ -50,6 +50,10 @@ Loop       zolander_loop.py — one-shot tick via launchd StartInterval (every 2
            calls in the tick (cheap, verifiable); enrichment belongs to the "dream".
            Deliberately NOT a KeepAlive while-loop: launchd is the scheduler, so a
            stuck tick can't wedge the daemon. See toolkit/LOOP_README.md.
+Dream      zolander_dream.py — nightly (03:00, launchd StartCalendarInterval). Salience
+           decay -> LLM distills the day's L0 episodes into a new L1 semantic concept
+           -> writes a morning brief. READ-ONLY to the DB: it never deletes; forget
+           candidates are only *proposed* for the human to approve (values-as-code).
 Peers      (roadmap) A2A bridge (guestbook / signed inbox)
 ```
 

@@ -15,8 +15,8 @@ Metadata na kazdom zazname:
   kind, layer, salience(0..1), confidence(0..1), source, project, ts, text, links
 
 Pouzitie:
-  VPY=/Users/ziak.z/.local/share/uv/tools/vmlx/bin/python
-  export NODE_PATH=/Users/ziak.z/.npm/_npx/9e13365ae4a6529c/node_modules
+  VPY=/Users/__USER__/.local/share/uv/tools/vmlx/bin/python
+  export NODE_PATH=/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules
   echo '{"text":"...", "kind":"episodic", "layer":"L0", ...}' | $VPY zol_mem.py remember
   echo '{"query":"...", "topk":5}' | $VPY zol_mem.py recall
   $VPY zol_mem.py decay            # salience decay + navrhy na konsolidaciu/zabudnutie
@@ -32,13 +32,13 @@ import time
 import subprocess
 
 HOME = os.path.expanduser("~")
-NODE = "/Users/ziak.z/Applications/homebrew/bin/node"
-HS = "/Users/ziak.z/zolo2.0/toolkit/hs.mjs"
-VPY = "/Users/ziak.z/.local/share/uv/tools/vmlx/bin/python"
-EMBED = "/Users/ziak.z/zolo2.0/toolkit/embed.py"
+NODE = "/Users/__USER__/Applications/homebrew/bin/node"
+HS = "/Users/__USER__/zolo2.0/toolkit/hs.mjs"
+VPY = "/Users/__USER__/.local/share/uv/tools/vmlx/bin/python"
+EMBED = "/Users/__USER__/zolo2.0/toolkit/embed.py"
 STATE = os.path.join(HOME, "zolander/state")
 IDFILE = os.path.join(STATE, "mem_next_id.txt")
-NODE_ENV = dict(os.environ, NODE_PATH="/Users/ziak.z/.npm/_npx/9e13365ae4a6529c/node_modules")
+NODE_ENV = dict(os.environ, NODE_PATH="/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules")
 
 COL_SEM = "zol_sem"
 COL_HIER = "zol_hier"

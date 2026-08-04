@@ -13,7 +13,7 @@
 //
 // ENV: HYPERSPACE_HOST (default localhost:50051), HYPERSPACE_API_KEY (default '')
 
-import { HyperspaceClient } from '/Users/ziak.z/.npm/_npx/9e13365ae4a6529c/node_modules/hyperspace-sdk-ts/dist/client.js';
+import { HyperspaceClient } from '/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules/hyperspace-sdk-ts/dist/client.js';
 
 const HOST = process.env.HYPERSPACE_HOST || 'localhost:50051';
 const KEY = process.env.HYPERSPACE_API_KEY || '';

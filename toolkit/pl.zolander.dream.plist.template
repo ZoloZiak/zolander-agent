@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TEMPLATE: replace __USER__ with your macOS username, then:
+     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/pl.zolander.dream.plist -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>pl.zolander.dream</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/__USER__/zolander/toolkit/zolander_dream.py</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/__USER__/zolander/logs/dream.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/__USER__/zolander/logs/dream.err.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/__USER__/zolander</string>
+</dict>
+</plist>
