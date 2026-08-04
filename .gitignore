@@ -1,0 +1,25 @@
+# --- Zolander: NIKDY nepublikovat ---
+# Privatne kluce / identita (kazdy si generuje vlastne cez gen_identity.py)
+*.key
+*.pem
+identity/
+fingerprint.txt
+integrity.sha256
+
+# Tokeny / secrets
+.zsh_secrets
+.netrc
+*.token
+.env
+
+# Runtime stav / pamat / logy (osobne data)
+state/
+denniky/
+logs/
+*.jsonl
+mem_next_id.txt
+
+# Python smeti
+__pycache__/
+*.pyc
+.DS_Store
