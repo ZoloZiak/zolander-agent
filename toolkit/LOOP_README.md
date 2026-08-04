@@ -19,6 +19,15 @@ ZAMERNE bez LLM volani (lacne). LLM obohacovanie pride vo F4 "sen".
 - vynut tick:   launchctl kickstart -k gui/501/pl.zolander.loop
 - po zmene plistu: bootout potom bootstrap (reload)
 
+## Nocny sen (F4) — pl.zolander.dream
+zolander_dream.py, launchd StartCalendarInterval Hour=3 Minute=0 (raz denne, RunAtLoad=false).
+Fazy: salience decay -> LLM (gpt-mini) destilat dnesnych L0 epizod do noveho L1
+semantic konceptu -> ranny brief (denniky/brief_<datum>.md). READ-ONLY voci DB:
+NIC nemaze, forget-kandidatov len navrhne (P2/P3 — destrukcia az po tvojom audite).
+- start:  launchctl bootstrap gui/501 ~/Library/LaunchAgents/pl.zolander.dream.plist
+- test:   launchctl kickstart -k gui/501/pl.zolander.dream   (vynuti sen hned)
+- log:    logs/dream.log ; brief: denniky/brief_<datum>.md
+
 ## Kontrola ze zije
 - tail state/heartbeat.txt  (ts + pid posledneho ticku)
 - tail logs/loop.log
