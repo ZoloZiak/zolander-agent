@@ -1,53 +1,70 @@
 #!/usr/bin/env python3
-"""zol_mem.py — pamat Zolandera (F2). Dualna reprezentacia + vrstvy cez metadata.
+"""zol_mem.py — pamäť Zolandera (F2, v2 čistý Lorentz). PLAN §14 čistý rez.
 
-Kazda spomienka zije v DVOCH kolekciach pod ROVNAKYM id:
-  zol_sem  (cosine 768)  — presny semanticky recall
-  zol_hier (lorentz 129) — hierarchia / abstrakcia / zoom-out
+ZMENA oproti v1: koniec dvojkolajnosti cosine768 + toy-lorentz129.
+Teraz JEDNA natívna 129D Lorentz reprezentácia z YAR v5 (embed_yar.py).
+Polomer/hĺbku určuje MODEL (naučená norma v LorentzMRLHead), NIE tabuľka LAYER_R.
 
-Vrstvy NIE su kolekcie — su to metadata:
-  kind:  episodic | semantic | procedural | identity
-  layer: L0 (working/epizoda, zabuda) | L1 (destilat) | L2 (jadro, nezabuda)
-Hyperbolicky polomer r sa odvodi od layer: L2 blizko korena (abstraktne, r male),
-L0 na okraji (konkretne, r velke) — presne ako to_lorentz.py mapuje hlbku.
+Štyri kolekcie podľa druhu pamäte (kognitívna trojica semantic/episodic/
+procedural + naša identity), všetky lorentz 129:
+  zol_semantic   — fakty, poznatky, princípy (destiláty)
+  zol_episodic   — zážitky, udalosti, čo sa v sesii stalo (zabúda cez decay)
+  zol_procedural — naučené postupy: "ako sa rieši X", "keď zlyhá Y, sprav Z"
+  zol_identity   — jadro identity, hodnoty, kto Zolander je (nezabúda)
 
-Metadata na kazdom zazname:
-  kind, layer, salience(0..1), confidence(0..1), source, project, ts, text, links
+Pozn.: procedurálna pamäť je aj v Hermes skilloch (načítané pravidlá); táto
+kolekcia je pre postupy, ktoré má Zolander vedieť sémanticky VYHĽADAŤ, nie len
+keď sa skill načíta.
 
-Pouzitie:
-  VPY=/Users/__USER__/.local/share/uv/tools/vmlx/bin/python
-  export NODE_PATH=/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules
-  echo '{"text":"...", "kind":"episodic", "layer":"L0", ...}' | $VPY zol_mem.py remember
-  echo '{"query":"...", "topk":5}' | $VPY zol_mem.py recall
-  $VPY zol_mem.py decay            # salience decay + navrhy na konsolidaciu/zabudnutie
+Hippocampus NIE je kolekcia — je to PROCES konsolidácie v 'sen' (F4,
+zolander_dream.py): episodic L0 -> destilát -> semantic/procedural L1 + návrh
+čo zabudnúť. Kolekcie = kde spomienky ležia; hippocampus = čo ich presúva.
+
+Vrstvy zostávajú ako METADATA (nie polomer):
+  layer: L0 (working/epizoda) | L1 (destilát) | L2 (jadro) | L3 (meta-rámec)
+  salience(0..1), confidence(0..1) — pre decay/konsolidáciu v 'sen' (F4)
+
+Použitie:
+  VPY=/Users/__USER__/zolander/.venv-yar/bin/python
+  echo '{"text":"...", "kind":"semantic", "layer":"L1"}' | $VPY zol_mem.py remember
+  echo '{"query":"...", "kind":"semantic", "topk":5}'    | $VPY zol_mem.py recall
+  $VPY zol_mem.py decay
   $VPY zol_mem.py stats
-
-Design pozn.: embed cez embed.py logiku (mlx GPU). Zapis/citanie cez hs.mjs most.
+  $VPY zol_mem.py init      # vytvorí 3 kolekcie (idempotentne)
 """
 import os
 import sys
 import json
-import math
 import time
 import subprocess
 
 HOME = os.path.expanduser("~")
 NODE = "/Users/__USER__/Applications/homebrew/bin/node"
 HS = "/Users/__USER__/zolo2.0/toolkit/hs.mjs"
-VPY = "/Users/__USER__/.local/share/uv/tools/vmlx/bin/python"
-EMBED = "/Users/__USER__/zolo2.0/toolkit/embed.py"
 STATE = os.path.join(HOME, "zolander/state")
 IDFILE = os.path.join(STATE, "mem_next_id.txt")
 NODE_ENV = dict(os.environ, NODE_PATH="/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules")
 
-COL_SEM = "zol_sem"
-COL_HIER = "zol_hier"
-TRUNC = 128
+DIM = 129
+METRIC = "lorentz"
+KIND_COL = {
+    "semantic": "zol_semantic",
+    "episodic": "zol_episodic",
+    "identity": "zol_identity",
+    "procedural": "zol_procedural",
+}
+DEFAULT_KIND = "episodic"
 
-# layer -> zakladny hyperbolicky polomer (male = blizko korena = abstraktne/jadro)
-LAYER_R = {"L2": 0.4, "L1": 1.2, "L0": 2.2}
-# layer -> decay rychlost salience za den (L2 nezabuda)
-LAYER_DECAY = {"L2": 0.0, "L1": 0.01, "L0": 0.08}
+# layer -> decay rýchlosť salience za deň (L2/L3 = jadro/princíp, nezabúdajú)
+LAYER_DECAY = {"L3": 0.0, "L2": 0.0, "L1": 0.01, "L0": 0.08}
+
+# YAR embedder (natívny 129D Lorentz) — import z rovnakého toolkitu
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from embed_yar import embed_one  # noqa: E402
+
+
+def col_for(kind):
+    return KIND_COL.get(kind, KIND_COL[DEFAULT_KIND])
 
 
 def next_id():
@@ -60,63 +77,31 @@ def next_id():
     return cur
 
 
-def embed_text(text):
-    """Vrati 768d vektor cez GPU embed.py."""
-    p = subprocess.run(
-        [VPY, EMBED],
-        input=json.dumps({"id": 1, "text": text}) + "\n",
-        capture_output=True, text=True,
-        env=dict(os.environ, HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1"),
-    )
+def hs(cmd, *args, stdin=None):
+    p = subprocess.run([NODE, HS, cmd, *[str(a) for a in args]],
+                       input=stdin, capture_output=True, text=True, env=NODE_ENV)
     if p.returncode != 0:
-        raise RuntimeError("embed zlyhal: " + p.stderr[-500:])
-    for line in p.stdout.splitlines():
-        line = line.strip()
-        if line:
-            return json.loads(line)["vector"]
-    raise RuntimeError("embed nevratil vektor")
+        raise RuntimeError(f"hs {cmd} zlyhal: " + p.stderr[-500:])
+    out = p.stdout.strip()
+    return json.loads(out) if out else None
 
 
-def to_lorentz(vec768, r):
-    """Matryoshka 128 + L2 norm + exp-map na hyperboloid pri polomere r -> 129d."""
-    u = vec768[:TRUNC]
-    nrm = math.sqrt(sum(x * x for x in u)) or 1.0
-    u = [x / nrm for x in u]
-    ch, sh = math.cosh(r), math.sinh(r)
-    return [ch] + [sh * x for x in u]
-
-
-def hs_insert(col, records):
-    """records: list of {id, vector, meta}."""
-    payload = "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n"
-    p = subprocess.run([NODE, HS, "insert", col], input=payload,
-                       capture_output=True, text=True, env=NODE_ENV)
-    if p.returncode != 0:
-        raise RuntimeError("hs insert zlyhal: " + p.stderr[-500:])
-    return json.loads(p.stdout.strip())
-
-
-def hs_search(col, vector, topk):
-    p = subprocess.run([NODE, HS, "search", col, str(topk)],
-                       input=json.dumps({"vector": vector}),
-                       capture_output=True, text=True, env=NODE_ENV)
-    if p.returncode != 0:
-        raise RuntimeError("hs search zlyhal: " + p.stderr[-500:])
-    return json.loads(p.stdout.strip())
-
-
-def hs_stats(col):
-    p = subprocess.run([NODE, HS, "stats", col],
-                       capture_output=True, text=True, env=NODE_ENV)
-    if p.returncode != 0:
-        return {"error": p.stderr[-200:]}
-    return json.loads(p.stdout.strip())
+def cmd_init():
+    """Vytvorí 3 Lorentz kolekcie (idempotentne — ak existujú, hs vráti chybu, ignorujeme)."""
+    made = {}
+    for kind, col in KIND_COL.items():
+        try:
+            hs("create", col, DIM, METRIC)
+            made[col] = "created"
+        except RuntimeError as e:
+            made[col] = "exists?" if ("exist" in str(e).lower() or "already" in str(e).lower()) else f"ERR {e}"
+    print(json.dumps({"init": made, "dim": DIM, "metric": METRIC}, ensure_ascii=False, indent=2))
 
 
 def cmd_remember():
     obj = json.loads(sys.stdin.read())
     text = obj["text"]
-    kind = obj.get("kind", "episodic")
+    kind = obj.get("kind", DEFAULT_KIND)
     layer = obj.get("layer", "L0")
     salience = float(obj.get("salience", 0.5))
     confidence = float(obj.get("confidence", 0.7))
@@ -126,9 +111,8 @@ def cmd_remember():
     ts = obj.get("ts") or time.strftime("%Y-%m-%dT%H:%M:%S")
 
     mid = obj.get("id") or next_id()
-    vec = embed_text(text)
-    r = LAYER_R.get(layer, 2.2)
-    lor = to_lorentz(vec, r)
+    vec = embed_one(text)  # natívny 129D Lorentz
+    col = col_for(kind)
 
     meta = {
         "kind": kind, "layer": layer, "salience": round(salience, 3),
@@ -136,14 +120,15 @@ def cmd_remember():
         "project": project, "ts": ts, "links": links,
         "text": text[:300],
     }
-    hs_insert(COL_SEM, [{"id": mid, "vector": vec, "meta": meta}])
-    hs_insert(COL_HIER, [{"id": mid, "vector": lor, "meta": dict(meta, r=round(r, 3))}])
-    # lokalny index pre decay/konsolidaciu (DB nema hromadny listing)
+    rec = json.dumps({"id": mid, "vector": vec, "meta": meta}, ensure_ascii=False) + "\n"
+    hs("insert", col, stdin=rec)
+
+    # lokálny index pre decay/konsolidáciu (DB nemá hromadný listing)
     with open(os.path.join(STATE, "mem_index.jsonl"), "a") as f:
-        f.write(json.dumps({"id": mid, "kind": kind, "layer": layer,
+        f.write(json.dumps({"id": mid, "col": col, "kind": kind, "layer": layer,
                             "salience": salience, "confidence": confidence,
                             "ts": ts, "text": text[:120]}, ensure_ascii=False) + "\n")
-    print(json.dumps({"remembered": mid, "kind": kind, "layer": layer, "r": round(r, 3)},
+    print(json.dumps({"remembered": mid, "kind": kind, "col": col, "layer": layer},
                      ensure_ascii=False))
 
 
@@ -151,38 +136,40 @@ def cmd_recall():
     obj = json.loads(sys.stdin.read())
     query = obj["query"]
     topk = int(obj.get("topk", 5))
-    mode = obj.get("mode", "sem")  # sem = presny recall, hier = abstraktny/zoom-out
-    vec = embed_text(query)
-    if mode == "hier":
-        r = LAYER_R.get(obj.get("layer", "L0"), 2.2)
-        res = hs_search(COL_HIER, to_lorentz(vec, r), topk)
-    else:
-        res = hs_search(COL_SEM, vec, topk)
-    print(json.dumps(res, ensure_ascii=False, indent=2))
+    kind = obj.get("kind")  # None => hľadaj vo všetkých troch
+    vec = embed_one(query)
+    cols = [col_for(kind)] if kind else list(KIND_COL.values())
+    results = []
+    for col in cols:
+        res = hs("search", col, topk, stdin=json.dumps({"vector": vec}))
+        for r in (res or []):
+            r["col"] = col
+            results.append(r)
+    # menšia Lorentzova vzdialenosť = bližšie; zoraď a vezmi topk
+    results.sort(key=lambda r: r.get("distance", 9e9))
+    print(json.dumps(results[:topk], ensure_ascii=False, indent=2))
 
 
 def cmd_stats():
-    out = {c: hs_stats(c) for c in (COL_SEM, COL_HIER)}
+    out = {}
+    for col in KIND_COL.values():
+        try:
+            out[col] = hs("stats", col)
+        except RuntimeError as e:
+            out[col] = {"error": str(e)[-200:]}
     print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 def cmd_decay():
-    """Salience decay podla veku a vrstvy. Navrhne konsolidaciu (L0->L1) a
-    zabudnutie (salience pod prah). NEMENI DB sam — vypise navrhy pre 'sen' (F4),
-    ktory rozhodne. Zamerne read-only: destruktivne akcie az po rozhodnuti."""
+    """Salience decay podľa veku a vrstvy. Read-only voči DB — navrhne
+    konsolidáciu (L0->L1) a zabudnutie (pod prah) pre 'sen' (F4), ktorý rozhodne."""
     now = time.time()
     suggestions = {"forget": [], "promote": [], "kept": 0}
-    # nacitaj vsetky body zo sem kolekcie cez stats/get nie je hromadne dostupne,
-    # preto pracujeme s lokalnym indexom ak existuje; inak len report.
     idx_path = os.path.join(STATE, "mem_index.jsonl")
     if not os.path.exists(idx_path):
-        print(json.dumps({"note": "ziadny lokalny mem_index.jsonl — decay je no-op kym loop (F3) nezacne indexovat zapisy", "suggestions": suggestions}, ensure_ascii=False, indent=2))
+        print(json.dumps({"note": "žiadny mem_index.jsonl — decay no-op", "suggestions": suggestions}, ensure_ascii=False, indent=2))
         return
-    rows = []
-    for line in open(idx_path):
-        line = line.strip()
-        if line:
-            rows.append(json.loads(line))
+    rows = [json.loads(l) for l in open(idx_path) if l.strip()]
     out = []
     for r in rows:
         layer = r.get("layer", "L0")
@@ -192,8 +179,7 @@ def cmd_decay():
             age_days = (now - time.mktime(time.strptime(ts, "%Y-%m-%dT%H:%M:%S"))) / 86400.0
         except Exception:
             age_days = 0.0
-        decay = LAYER_DECAY.get(layer, 0.08) * age_days
-        new_sal = max(0.0, sal - decay)
+        new_sal = max(0.0, sal - LAYER_DECAY.get(layer, 0.08) * age_days)
         r["salience"] = round(new_sal, 3)
         if layer == "L0" and new_sal < 0.15:
             suggestions["forget"].append(r["id"])
@@ -210,17 +196,13 @@ def cmd_decay():
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "stats"
-    if cmd == "remember":
-        cmd_remember()
-    elif cmd == "recall":
-        cmd_recall()
-    elif cmd == "decay":
-        cmd_decay()
-    elif cmd == "stats":
-        cmd_stats()
-    else:
-        print("neznamy prikaz: " + cmd, file=sys.stderr)
-        sys.exit(2)
+    {
+        "init": cmd_init,
+        "remember": cmd_remember,
+        "recall": cmd_recall,
+        "decay": cmd_decay,
+        "stats": cmd_stats,
+    }.get(cmd, lambda: (_ for _ in ()).throw(SystemExit(f"neznámy príkaz: {cmd}")))()
 
 
 if __name__ == "__main__":
