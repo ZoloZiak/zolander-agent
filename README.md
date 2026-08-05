@@ -11,8 +11,12 @@ done — not a philosopher who only floats above the work.
 
 It runs on [Hermes Agent](https://hermes-agent.nousresearch.com), keeps a stable
 identity across models, and remembers across sessions in a hyperbolic vector space
-where **geometry is the reasoning substrate, not decoration.** Built to run on a
-locked-down, DLP-monitored corporate machine.
+where **geometry is the reasoning substrate, not decoration.** It was *designed
+around* a locked-down, DLP-monitored corporate machine — meaning the shell
+conventions (one atomic command, no `&&`/`;` chaining, no heredocs) are written to
+avoid tripping endpoint DLP. To be clear: that is a **prompt-level convention in the
+skill, not an enforcement engine** — Zolander does not implement or police DLP; it
+just tries not to fight it.
 
 This repo is a **copyable architecture**, not a personal dump: sanitized templates
 and toolkit scripts. You generate your own identity key and write your own core.
@@ -373,6 +377,23 @@ Before opening a PR, confirm:
 - Private keys, tokens, runtime state and diaries are **git-ignored** and never
   published. Everyone generates their own identity.
 - The published `SKILL.md` and `*.plist.template` files carry placeholders only.
+- **Private key at rest.** `gen_identity.py` encrypts the Ed25519 key (PKCS8 +
+  `BestAvailableEncryption`) when `ZOLANDER_KEY_PASSPHRASE` is set in the env; the
+  same variable is read back by `a2a.py` to sign. With no passphrase the key is
+  written unencrypted (`chmod 600`) and the tool **warns out loud**. This is
+  deliberate: a passphrase stored next to the key on disk would be read by the same
+  endpoint/DLP agent that can read the key — zero real gain, pure theatre — so the
+  passphrase must come from outside the disk (env/secret manager) or not at all.
+- **Destructive ops are guarded.** `hs.mjs delete <collection>` drops all vectors
+  irreversibly, so it refuses to run without an explicit `--yes` flag or
+  `HS_CONFIRM_DELETE=1`. No silent collection wipes.
+- **Integrity check is fail-closed.** `zolander_loop.py` treats a missing
+  `integrity.py` as a violation and aborts the tick — absence of the check is never
+  a silent pass.
+- **Honest scope.** The DLP-friendly shell conventions are a *prompt convention* in
+  the skill, not an enforcement engine; the loop itself is low-privilege (git status
+  reads + a diary, no LLM). Real blast radius comes from Hermes and whatever tools
+  you grant it — not from this kit.
 
 ## License
 

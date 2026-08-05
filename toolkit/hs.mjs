@@ -5,7 +5,7 @@
 // Použitie (JSON cez stdin/args):
 //   node hs.mjs list
 //   node hs.mjs create <collection> <dim> [metric]        (metric: cosine|l2|poincare|lorentz)
-//   node hs.mjs delete <collection>
+//   node hs.mjs delete <collection> --yes                 (destructive; needs --yes or HS_CONFIRM_DELETE=1)
 //   node hs.mjs insert <collection>                       (stdin: JSONL {id, vector, meta})
 //   node hs.mjs search <collection> <topK>                (stdin: JSON {vector:[...]})
 //   node hs.mjs get <collection> <id1,id2,...>
@@ -39,7 +39,23 @@ async function main() {
       const schema = { components: [{ name: 'default', metric, fullDimension: Number(dim), weight: 1 }], cascadePipeline: [] };
       console.log(JSON.stringify({ created: await c.createCollection(col, schema) }));
     } else if (cmd === 'delete') {
-      console.log(JSON.stringify({ deleted: await c.deleteCollection(args[0]) }));
+      // DESTRUCTIVE: dropping a collection wipes all its vectors irreversibly.
+      // Guard against accidental/mis-scripted invocation — require an explicit
+      // confirmation (flag `--yes` or env HS_CONFIRM_DELETE=1). No silent drops.
+      const col = args[0];
+      const confirmed = args.includes('--yes') || process.env.HS_CONFIRM_DELETE === '1';
+      if (!col) {
+        console.error('ERR delete: missing collection name');
+        process.exit(2);
+      }
+      if (!confirmed) {
+        console.error(
+          `REFUSED: delete '${col}' is destructive and irreversible. ` +
+          `Re-run with --yes or set HS_CONFIRM_DELETE=1 to confirm.`
+        );
+        process.exit(3);
+      }
+      console.log(JSON.stringify({ deleted: await c.deleteCollection(col) }));
     } else if (cmd === 'insert') {
       const col = args[0];
       const raw = await readStdin();
