@@ -29,8 +29,13 @@ DREAMLOG = os.path.join(LOGS, "dream.log")
 # zol_mem/ascend potrebuju YAR v5 embedder (torch) -> dedikovany .venv-yar,
 # NIE stary vmlx python ani /usr/bin/python3 (tie torch nemaju).
 VPY = os.path.join(ROOT, ".venv-yar", "bin", "python")
+EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
+# model pre nocnu konsolidaciu/ascend. Default opus (kvalita pamate; LLM je zadarmo,
+# nocny automat nema kontext-limit problem). Prepisatelne cez DREAM_MODEL.
+DREAM_MODEL = os.environ.get("DREAM_MODEL", "opus")
 
 sys.path.insert(0, os.path.join(HOME, "zolo2.0", "toolkit"))
+sys.path.insert(0, os.path.join(ROOT, "toolkit"))  # cluster_llm
 
 
 def now():
@@ -73,28 +78,74 @@ def todays_episodes(rows):
     return [r for r in rows if r.get("layer") == "L0" and r.get("ts", "").startswith(today)]
 
 
-def consolidate(episodes):
-    """gpt-mini destilát dnešných epizód -> nový L1 semantic koncept. Vráti text alebo None."""
-    if len(episodes) < 2:
-        return None  # netreba konsolidovať jednu epizódu
+def _embed_many(texts):
+    """Embedding cez subprocess do .venv-yar (dream bezi pod /usr/bin/python3 bez torchu)."""
+    payload = "".join(json.dumps({"id": i, "text": t}, ensure_ascii=False) + "\n"
+                      for i, t in enumerate(texts))
+    p = subprocess.run([VPY, EMBED], input=payload, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError("embed_yar zlyhal: " + p.stderr[-300:])
+    by = {}
+    for line in p.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            o = json.loads(line)
+            by[o["id"]] = o["vector"]
+    return [by[i] for i in range(len(texts))]
+
+
+def _ldist(a, b):
+    """Lorentzova vzdialenost (arccosh(-<a,b>_L)). Mensie=blizsie."""
+    import math
+    mink = -a[0] * b[0] + sum(x * y for x, y in zip(a[1:], b[1:]))
+    val = -mink
+    if val < 1.0:
+        val = 1.0
+    return math.acosh(val)
+
+
+def _distill_group(group, model):
+    """LLM destilat JEDNEJ tematicky suvislej skupiny epizod -> 1 L1 poznatok."""
+    from palantir_client import chat
+    joined = "\n".join(f"- {e.get('text', '')}" for e in group)
+    system = ("Si Zolander, pamatovy konsolidator. Z epizod JEDNEJ temy vydestiluj "
+              "1-2 vety trvaleho poznatku (semantic memory) po slovensky. Len fakt/"
+              "vzorec, ziadny datum, ziadna omacka. Ak niet co destilovat, napis NIC.")
+    prompt = f"Epizody (jedna tema):\n{joined}\n\nDestilat (1-2 vety, alebo NIC):"
     try:
-        from palantir_client import chat
+        txt = chat(prompt, model=model, max_tokens=200, system=system).strip()
     except Exception as e:
-        log(f"palantir_client import zlyhal: {e!r}")
-        return None
-    joined = "\n".join(f"- {e.get('text', '')}" for e in episodes)
-    system = ("Si Zolander, pamäťový konsolidátor. Z epizód jedného dňa vydestiluj "
-              "1-2 vety trvalého poznatku (semantic memory) po slovensky. Len fakt/"
-              "vzorec, žiadny dátum, žiadna omáčka. Ak niet čo destilovať, napíš NIC.")
-    prompt = f"Dnešné epizódy:\n{joined}\n\nDestilát (1-2 vety, alebo NIC):"
-    try:
-        txt = chat(prompt, model="gpt-mini", max_tokens=200, system=system).strip()
-    except Exception as e:
-        log(f"chat zlyhal: {e!r}")
+        log(f"distill chat zlyhal: {e!r}")
         return None
     if not txt or txt.upper().startswith("NIC"):
         return None
     return txt
+
+
+def consolidate(episodes, model=DREAM_MODEL):
+    """Plny hippocampalny cyklus (F4): dnesne L0 epizody -> LLM-asistovany clustering
+    podla TEMY (llm_cluster) -> KAZDA suvisla skupina destiluje SVOJ L1 poznatok.
+
+    Predtym: vsetky epizody zliate do 1 destilatu -> rozmazany L1 ked su z roznych tem.
+    Teraz: viacero cistych L1 (jeden na temu). Vrati list textov destilatov."""
+    if len(episodes) < 2:
+        return []  # netreba konsolidovat jednu epizodu
+    try:
+        from cluster_llm import llm_cluster
+        groups = llm_cluster(episodes, _embed_many, _ldist, 1.0,
+                             model=model, log_fn=log)
+    except Exception as e:
+        log(f"llm_cluster v consolidate zlyhal ({e!r}) -> 1 skupina fallback")
+        groups = [episodes]
+    distilled = []
+    for g in groups:
+        if len(g) < 2:
+            continue  # jedina epizoda netvori trvaly poznatok
+        txt = _distill_group(g, model)
+        if txt:
+            distilled.append({"text": txt, "from_ids": [e.get("id") for e in g]})
+    log(f"consolidate: {len(episodes)} epizod -> {len(groups)} skupin -> {len(distilled)} L1 destilatov")
+    return distilled
 
 
 def remember_l1(text):
@@ -135,7 +186,8 @@ def ascend_higher(model="gpt-mini"):
     return created
 
 
-def write_brief(decay_res, episodes, distilled, new_id, ascended=None):
+def write_brief(decay_res, episodes, distilled_l1, ascended=None):
+    """distilled_l1 = list dictov {text, from_ids, id} novych L1 konceptov."""
     day = datetime.date.today().isoformat()
     path = os.path.join(DENNIKY, f"brief_{day}.md")
     os.makedirs(DENNIKY, exist_ok=True)
@@ -144,8 +196,12 @@ def write_brief(decay_res, episodes, distilled, new_id, ascended=None):
         f.write(f"# Ranný brief — {day}\n\n")
         f.write(f"*Sen: {now()}*\n\n")
         f.write(f"## Včerajšok\n- L0 epizód: {len(episodes)}\n")
-        if distilled:
-            f.write(f"\n## Nový L1 koncept (id={new_id})\n> {distilled}\n")
+        if distilled_l1:
+            f.write(f"\n## Nové L1 koncepty ({len(distilled_l1)} — jeden na tému)\n")
+            for d in distilled_l1:
+                cid = d.get("id", "?")
+                frm = ",".join(str(i) for i in d.get("from_ids", []))
+                f.write(f"- **id={cid}** (z {frm}): {d.get('text', '')}\n")
         else:
             f.write("\n## Konsolidácia\n- nič nové na destiláciu\n")
         if ascended:
@@ -169,11 +225,14 @@ def dream():
     decay_res = run_decay()
     rows = load_index()
     episodes = todays_episodes(rows)
-    distilled = consolidate(episodes)
-    new_id = remember_l1(distilled) if distilled else None
-    ascended = ascend_higher(model="gpt-mini")  # F8: dvihni L1->L2->L3
-    brief = write_brief(decay_res, episodes, distilled, new_id, ascended=ascended)
-    log(f"sen OK | epizod={len(episodes)} | novy_L1={new_id} | "
+    # F4 plny cyklus: epizody -> tematicke skupiny -> viacero cistych L1 destilatov
+    distilled_l1 = consolidate(episodes, model=DREAM_MODEL)
+    for d in distilled_l1:
+        nid = remember_l1(d["text"])
+        d["id"] = nid  # dopln realne id do briefu
+    ascended = ascend_higher(model=DREAM_MODEL)  # F8: dvihni L1->L2->L3
+    brief = write_brief(decay_res, episodes, distilled_l1, ascended=ascended)
+    log(f"sen OK | epizod={len(episodes)} | nove_L1={len(distilled_l1)} | "
         f"vyssie={len(ascended)} | brief={os.path.basename(brief)}")
     return 0
 

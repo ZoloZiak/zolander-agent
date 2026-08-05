@@ -45,10 +45,13 @@ EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 # subprocess do VENV_YAR (torch tam, nie tu).
 sys.path.insert(0, os.path.join(HOME, "zolo2.0", "toolkit"))
 
-MATCH_THRESHOLD = float(os.environ.get("PATTERNS_MATCH", "0.6"))   # Lorentz dist pod tuto = ISTY match uz z embeddingu
-# okno kde embedding sam nestaci, ale stoji za LLM re-check (vzorec naprieic domenami:
-# "gitara zapada prachom" vs "projekty necha rozrobene" = ten isty vzorec, ale slova
-# z inych domen -> vacsia Lorentz distance; embedding to nespoji, LLM ano)
+MATCH_THRESHOLD = float(os.environ.get("PATTERNS_MATCH", "0.6"))   # Lorentz dist pod tuto = ISTY match uz z embeddingu, bez LLM
+# Kolko NAJBLIZSICH ulozenych vzorcov dat LLM na re-check. NIE prah vzdialenosti:
+# cross-domain je absolutna Lorentz vzdialenost NESPOLAHLIVA (embedder vidi "gulas"
+# blizsie ku "kamera v skrini" nez abstraktny vzorec o odkladani), takze prah by
+# cross-domain match zahodil. Preto top-N poradie + LLM rozhodne (LLM cross-domain vie).
+RECHECK_N = int(os.environ.get("PATTERNS_RECHECK_N", "5"))
+# (mine() nizsie stale pouziva okno na clustering)
 RECHECK_WINDOW = float(os.environ.get("PATTERNS_RECHECK", "1.4"))
 PATTERN_PREFIX = "VZOREC:"
 
@@ -101,6 +104,31 @@ def load_index():
     return rows
 
 
+def load_patterns():
+    """Vsetky ULOZENE vzorce z mem_index (kind=semantic, text s prefixom VZOREC:).
+    Vracia ich VSETKY — nie cez embedding recall (ten cross-domain vzorce nevytiahne
+    do top-k, viz diag_detect.py). Vzorcov je malo (desiatky), da sa ich prejst vsetky."""
+    return [r for r in load_index()
+            if str(r.get("text", "")).startswith(PATTERN_PREFIX)]
+
+
+def nearest_patterns(situation, n=RECHECK_N):
+    """Zoradi ulozene vzorce podla Lorentzovej vzdialenosti k situacii a vrati top-n.
+    Poradie je len HEURISTIKA pre poradie LLM re-checku — NIE prah (cross-domain je
+    absolutna vzdialenost nespolahliva). Bez ulozenych vzorcov vrati []."""
+    pats = load_patterns()
+    if not pats:
+        return []
+    sit_vec = embed_many([situation])[0]
+    pat_vecs = embed_many([p["text"] for p in pats])
+    scored = []
+    for p, pv in zip(pats, pat_vecs):
+        scored.append((ldist(sit_vec, pv), p))
+    scored.sort(key=lambda x: x[0])
+    return [{"id": p["id"], "text": p["text"], "distance": d}
+            for d, p in scored[:n]]
+
+
 def ldist(a, b):
     """Lorentzova vzdialenost dvoch 129D bodov (arccosh(-<a,b>_L)). Mensie=blizsie."""
     mink = -a[0] * b[0] + sum(x * y for x, y in zip(a[1:], b[1:]))
@@ -151,24 +179,28 @@ def pattern_matches(situation, pattern_text, model="gpt-mini"):
 def detect(obj):
     situation = obj["situation"]
     model = obj.get("model", "opus")
-    hits = recall(situation, topk=obj.get("topk", 8), mode="sem")
-    # lokalny filter na ulozene vzorce (prefix VZOREC: v texte, kind=semantic)
-    patterns = [h for h in hits
-                if str(h.get("meta", {}).get("text", "")).startswith(PATTERN_PREFIX)]
-    known = patterns[0] if patterns else None
+    cands = nearest_patterns(situation, n=obj.get("recheck_n", RECHECK_N))
     out = {"situation": situation}
-    kd = known.get("distance", 1e9) if known else 1e9
-    matched, why = False, ""
-    if known and kd < MATCH_THRESHOLD:
-        matched, why = True, "zhoda uz na urovni embeddingu (Lorentz dist < prah)"
-    elif known and kd < RECHECK_WINDOW:
-        # embedding nestaci, ale je v okne -> LLM re-check naprieic domenami
-        matched, why = pattern_matches(situation, known["meta"].get("text", ""), model=model)
-    if matched:
+    matched, why, hit = False, "", None
+
+    if cands and cands[0]["distance"] < MATCH_THRESHOLD:
+        # isty match uz z embeddingu (skoro identicka situacia) — bez LLM
+        matched, why, hit = True, "zhoda uz na urovni embeddingu (Lorentz dist < prah)", cands[0]
+    else:
+        # embedding cross-domain nestaci -> LLM re-check top-N NAJBLIZSICH vzorcov.
+        # LLM vie spojit vzorec naprieic domenami (kamera v skrini == odkladanie projektov),
+        # co cisty embedding nevie. Prvy potvrdeny = match.
+        for c in cands:
+            m, w = pattern_matches(situation, c["text"], model=model)
+            if m:
+                matched, why, hit = True, w, c
+                break
+
+    if matched and hit:
         out["match"] = "ZNAMY_VZOREC"
-        out["pattern"] = known["meta"].get("text")
-        out["pattern_id"] = known["id"]
-        out["distance"] = round(kd, 4)
+        out["pattern"] = hit["text"]
+        out["pattern_id"] = hit["id"]
+        out["distance"] = round(hit["distance"], 4)
         out["why"] = why
         out["note"] = "Toto uz poznas — je to instancia ulozeneho vzorca vyssie."
     else:
@@ -177,10 +209,11 @@ def detect(obj):
         out["candidate"] = cand
         out["note"] = ("Neznamy vzorec. Navrhujem ho pomenovat takto (neulozil som "
                        "sam — potvrd cez: patterns.py learn).")
-        if patterns:
-            out["nearest_known"] = {"id": patterns[0]["id"],
-                                    "text": patterns[0]["meta"].get("text"),
-                                    "distance": round(patterns[0].get("distance", -1), 4)}
+        if cands:
+            out["nearest_known"] = {"id": cands[0]["id"],
+                                    "text": cands[0]["text"],
+                                    "distance": round(cands[0]["distance"], 4),
+                                    "checked": len(cands)}
     return out
 
 
@@ -196,19 +229,11 @@ def mine(model="opus"):
     rows = [r for r in load_index() if r.get("layer") in ("L0", "L1")]
     if len(rows) < 3:
         return {"note": f"malo dat na mining ({len(rows)})", "candidates": []}
-    vecs = embed_many([r.get("text", "") for r in rows])
-    # greedy cluster (Lorentzova vzdialenost, mensie=blizsie)
-    groups, reps = [], []
-    for r, v in zip(rows, vecs):
-        placed = False
-        for gi, rep in enumerate(reps):
-            if ldist(v, rep) <= RECHECK_WINDOW:
-                groups[gi].append(r)
-                placed = True
-                break
-        if not placed:
-            reps.append(v)
-            groups.append([r])
+    # LLM-asistovany clustering (Roadmap #1): zoskup podla PRINCIPU, nie povrchovych
+    # slov (cross-domain, kde cisty embedding zlyhava — PLAN §20). Fallback na
+    # embedding je vnutri llm_cluster.
+    from cluster_llm import llm_cluster
+    groups = llm_cluster(rows, embed_many, ldist, RECHECK_WINDOW, model=model)
     from palantir_client import chat
     system = ("Si Zolander. Z opakujucich sa udalosti pomenuj VZOREC (nazov 2-4 slova "
               "+ 1 veta). Po slovensky, ziadna lichotka. JSON {\"name\":..,\"desc\":..}.")

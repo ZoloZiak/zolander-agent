@@ -104,6 +104,24 @@ def cmd_koniec():
           "(kind=episodic) IBA ak guard čistý ===")
 
 
+def cmd_gate():
+    """Double-take BRANA (Roadmap #2): deterministicky rozhodni ci otazka je vazna,
+    a ak ano, spusti lift. Toto je konvencny vstupny bod ktory ma Zolander volat
+    PRED vaznou odpovedou (Hermes nema event-hook, takze je to skill-disciplina).
+    Vstup: argv[2] = otazka/situacia (alebo stdin)."""
+    problem = sys.argv[2] if len(sys.argv) > 2 else sys.stdin.read().strip()
+    if not problem:
+        print("pouzitie: zol_session.py gate \"<otazka>\"", file=sys.stderr)
+        sys.exit(2)
+    rc, out, err = _run([SYS_PY, LENS, "gate"],
+                        stdin=json.dumps({"problem": problem}))
+    if rc == 0:
+        print(out.strip())
+    else:
+        print("lens gate zlyhal:", err[-300:], file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_lens():
     """Double-take pred vážnou odpoveďou: deleguje na lens.py lift.
     Vstup: argv[2] = problém/situácia (alebo stdin)."""
@@ -143,12 +161,14 @@ def main():
         cmd_start()
     elif cmd == "koniec":
         cmd_koniec()
+    elif cmd == "gate":
+        cmd_gate()
     elif cmd == "lens":
         cmd_lens()
     elif cmd == "pattern":
         cmd_pattern()
     else:
-        print(f"neznámy režim: {cmd} (start|koniec|lens|pattern)", file=sys.stderr)
+        print(f"neznámy režim: {cmd} (start|koniec|gate|lens|pattern)", file=sys.stderr)
         sys.exit(2)
 
 

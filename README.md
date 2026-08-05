@@ -63,6 +63,9 @@ right.
 ## What runs today
 
 This is the honest, implemented state. Everything here has been run and tested.
+Each claim below carries a **green-check** — a named test/script that proves it by
+real execution. Run them all with `python3 toolkit/run_tests.py` (offline subset:
+`--offline`). Latest run on the reference machine: **PASS=5 FAIL=0**.
 
 - **Cross-model identity.** An Ed25519 keypair (`toolkit/gen_identity.py`) + a
   SHA-256 integrity manifest (`toolkit/integrity.py`) anchor "who Zolander is"
@@ -93,25 +96,45 @@ This is the honest, implemented state. Everything here has been run and tested.
   simply prompting "don't be sycophantic". Distilled techniques are seeded into
   procedural memory (`toolkit/seed_antihalluc.py`).
 - **Abstraction ladder in the nightly dream.** `toolkit/zolander_dream.py` runs decay,
-  distills the day's L0 episodes → L1, and then calls `toolkit/ascend.py` to climb the
-  higher rungs L1 → L2 (principle) → L3 (worldview) — each step a move toward r→0
-  ("what is this an instance of?"). New higher concepts are only *added* (never
-  deletes; forget candidates are proposed in the morning brief). Clustering uses native
-  Lorentz distance on YAR-v5 vectors.
+  clusters the day's L0 episodes **by topic** and distills each cluster into its own
+  clean L1 (so a mixed day yields several precise memories, not one blurred one), then
+  calls `toolkit/ascend.py` to climb the higher rungs L1 → L2 (principle) → L3
+  (worldview) — each step a move toward r→0 ("what is this an instance of?"). New
+  higher concepts are only *added* (never deletes; forget candidates are proposed in
+  the morning brief). *Green-check:* `test_dream_consolidate.py` — 4 episodes across 2
+  topics distill to 2 separate clean L1s (Opus), verified live.
+- **LLM-assisted clustering (was roadmap #1).** Grouping for the ladder and the pattern
+  miner runs through `toolkit/cluster_llm.py`: the LLM groups concepts by shared
+  *principle*, deciding both splits and merges in one pass, with a pure-embedding
+  fallback if the LLM is unavailable or returns an invalid grouping. This exists
+  because the YAR-v5 embedder is cross-domain unreliable in **both** directions.
+  *Green-check:* `test_llm_cluster_live.py` proves it live — where `ldist(camera,
+  guitar)=1.10` (same pattern, must merge) but `ldist(camera, coffee)=1.03`
+  (unrelated, yet *closer*): pure embedding would merge camera with coffee; the LLM
+  correctly merges camera+guitar and keeps the rest apart. `test_cluster_llm.py`
+  (offline) proves the grouping-validation + fallback path (9/9).
 - **Pattern / script detector.** `toolkit/patterns.py` (`detect` / `learn` / `mine`)
   catalogs recurring scripts — in situations, in people, in you — stored as `semantic`
   L2 memories prefixed `VZOREC:`. *Honest limitation:* the YAR-v5 embedder is weak at
   cross-domain topical similarity, so a pure-vector match alone won't link "guitar
-  gathering dust" to "projects left unfinished". The detector handles this with a
-  two-stage gate — a tight vector threshold for near-identical hits, and an **LLM
-  re-check** in a wider window for cross-domain patterns. It never auto-saves; new
-  patterns are proposed for approval (`learn`).
-- **Double-take + stability self-check.** `toolkit/lens.py` has two modes: `lift`
-  (name the abstraction level, step up one — "X is an instance of Y; the question above
-  the question is Z" — then descend back to a concrete action) and `stability`, a
-  local Lyapunov-style check that measures whether a reasoning trajectory converges on
-  signal or spirals into elegant nonsense. Distances are measured **natively in Lorentz
-  space** (arccosh), not Euclidean. Reachable via `zol_session.py lens` / `pattern`.
+  gathering dust" to "projects left unfinished". The detector handles this by loading
+  **all** stored patterns (not an embedding top-k, which would drop the very
+  cross-domain pattern it needs) and giving the LLM the top-N nearest for re-check —
+  a tight vector threshold still short-circuits near-identical hits without an LLM
+  call. It never auto-saves; new patterns are proposed for approval (`learn`).
+- **Double-take + stability self-check.** `toolkit/lens.py` has three modes: `gate`
+  (a deterministic, LLM-free classifier — `should_double_take` — that decides whether a
+  question is *serious* enough to warrant a double-take, so it doesn't fire on "hi";
+  serious ones trigger `lift`), `lift` (name the abstraction level, step up one — "X is
+  an instance of Y; the question above the question is Z" — then descend back to a
+  concrete action), and `stability`, a local Lyapunov-style check that measures whether
+  a reasoning trajectory converges on signal or spirals into elegant nonsense. Distances
+  are measured **natively in Lorentz space** (arccosh), not Euclidean. Reachable via
+  `zol_session.py gate` / `lens` / `pattern`. Because Hermes has no event hooks, the
+  "double-take before every serious answer" is enforced as a **skill convention** (the
+  identity `SKILL.md` mandates running `gate` before serious answers), not a callback.
+  *Green-check:* `test_double_take_gate.py` — 12/12 serious-vs-trivial classifications
+  (offline); `gate` then runs `lift` live on the serious ones.
 
 > Note on the stability check: this is a **local** Lyapunov proxy, not the HyperspaceDB
 > MCP `analyze_thought_stability` (that one needs an MCP connection the daemon doesn't
@@ -123,19 +146,17 @@ This is the honest, implemented state. Everything here has been run and tested.
 These are the ideas the project is *aiming* at. They are **not** running yet; where a
 partial exists it is called out. Do not treat this section as a feature list.
 
-1. **Fuller abstraction quality.** The ladder (L0→L1→L2→L3) runs today, but the
-   quality of the climb is bounded by the embedder's weak topical clustering (see the
-   pattern-detector limitation above) — grouping leans on an LLM step. A better
-   hyperbolic embedder, or LLM-assisted clustering, would sharpen the ascent.
-2. **Automatic double-take.** `lens.py` exists and is reachable, but nothing yet forces
-   a double-take *before every serious answer* automatically — today it's invoked
-   deliberately, not wired into the answer path as a mandatory gate.
-3. **A2A peer bridge (planned).** A signed guestbook / inbox to argue with peer agents
-   (see *Gniewka* below).
+1. **A2A peer bridge (partial).** The signed bridge core runs today: `toolkit/a2a.py`
+   (`post` / `read` / `verify` / `trust` / `whoami`) — Ed25519-signed guestbook/inbox
+   messages, verified offline, tamper-evident (a mutated body fails verification). What
+   remains is a *live* peer: reaching a running peer endpoint (see *Gniewka* below) once
+   theirs is up. *Green-check for the core:* run `a2a.py post` then `a2a.py read` — the
+   message verifies; edit its body and `read` flags it `PODPIS NESEDI`.
 
-> The reasoning-core scripts `ascend.py`, `patterns.py` and `lens.py` are now part of
-> this repo, ported to the native YAR-v5 / Lorentz-129D memory and reachable via
-> `zol_session.py`. Their *quality* is still bounded by the embedder (see roadmap #1).
+> The reasoning-core scripts `ascend.py`, `patterns.py` and `lens.py` are part of this
+> repo, ported to the native YAR-v5 / Lorentz-129D memory and reachable via
+> `zol_session.py`. Cross-domain grouping quality is now handled by the LLM-assisted
+> clustering above rather than raw embedding distance.
 
 ## The hard rule (this one IS enforced today)
 
@@ -245,6 +266,41 @@ Each memory carries:
 | confidence | 0..1 — verified vs guess (honesty) |
 | source | session \| loop \| peer \| user |
 | project, ts, text, links | |
+
+## Testing / green-check convention
+
+**The rule:** a feature only belongs in *What runs today* if it has a **green-check** —
+a named test or script that proves it by real execution. No green-check → it stays in
+the *Roadmap*. This is the same anti-overselling discipline as the per-memory
+`confidence` score, applied to the README itself.
+
+```
+python3 toolkit/run_tests.py            # all green-checks (offline + live LLM/embedder)
+python3 toolkit/run_tests.py --offline  # deterministic subset only (no LLM, no network)
+```
+
+The runner prints a `PASS=.. FAIL=.. SKIP=..` summary and exits non-zero on any failure.
+Live tests call the real LLM/embedder; the offline subset is deterministic (parser +
+grouping-validation + fallback logic) and safe to run anywhere.
+
+| Green-check | Proves | Type |
+|---|---|---|
+| `test_cluster_llm.py` | grouping validation + embedding fallback (9 cases) | offline |
+| `test_double_take_gate.py` | serious-vs-trivial classification for the double-take gate (12 cases) | offline |
+| `test_cluster_fold.py` | L0→L1 folds singletons; higher rungs don't force-merge | live |
+| `test_llm_cluster_live.py` | cross-domain merge+split the embedder gets wrong | live |
+| `test_dream_consolidate.py` | mixed day → several clean L1s, not one blurred | live |
+
+### PR checklist
+
+Before opening a PR, confirm:
+
+- [ ] Any new/changed claim in *What runs today* has a green-check (test/script) that
+      proves it, referenced by name in the README bullet.
+- [ ] `python3 toolkit/run_tests.py` passes (or `--offline` if you have no LLM/embedder
+      access), and the `PASS=..` line in the README is updated if the count changed.
+- [ ] No secrets, keys, tokens, runtime state or diaries are staged (see *Security*).
+- [ ] Unproven ideas go under *Roadmap*, not *What runs today*.
 
 ## Security
 
