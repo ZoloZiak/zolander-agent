@@ -79,7 +79,8 @@ real execution. Run them all with `python3 toolkit/run_tests.py` (offline subset
   live in metadata.
 - **Mechanical anti-hallucination / anti-sycophancy gate.** `toolkit/zol_guard.py` is
   a deterministic, LLM-free gate (exit 0 = clean, 1 = finding) — **not** prose in a
-  skill, and not an event-hook (Hermes has none). Modes: `scan-text` (confabulation
+  skill. It is deliberately standalone (usable from any runtime, and from the hooks
+  below), not a claim that verification can't be wired into the agent loop. Modes: `scan-text` (confabulation
   tells, sycophancy markers, uncited factual claims), `scan-input` (leading/confirmation
   cues in the *user's* prompt), and `verify-file/-line/-symbol` (check a claim against
   file reality).
@@ -130,9 +131,11 @@ real execution. Run them all with `python3 toolkit/run_tests.py` (offline subset
   concrete action), and `stability`, a local Lyapunov-style check that measures whether
   a reasoning trajectory converges on signal or spirals into elegant nonsense. Distances
   are measured **natively in Lorentz space** (arccosh), not Euclidean. Reachable via
-  `zol_session.py gate` / `lens` / `pattern`. Because Hermes has no event hooks, the
-  "double-take before every serious answer" is enforced as a **skill convention** (the
-  identity `SKILL.md` mandates running `gate` before serious answers), not a callback.
+  `zol_session.py gate` / `lens` / `pattern`. The "double-take before every serious
+  answer" is enforced as a **skill convention** (the identity `SKILL.md` mandates
+  running `gate` before serious answers) — a soft rule that lives in the prompt. For
+  the things that must NOT depend on the model's compliance, see *Hard locks via
+  Hermes hooks* below.
   *Green-check:* `test_double_take_gate.py` — 12/12 serious-vs-trivial classifications
   (offline); `gate` then runs `lift` live on the serious ones.
 
@@ -140,6 +143,66 @@ real execution. Run them all with `python3 toolkit/run_tests.py` (offline subset
 > MCP `analyze_thought_stability` (that one needs an MCP connection the daemon doesn't
 > have, and its Möbius math degenerates at the ball boundary). Same interpretation
 > (negative exponent = contraction = convergence), computed on native Lorentz vectors.
+
+## Hard locks via Hermes hooks
+
+Everything above that says *skill convention* or *mandated in `SKILL.md`* is a **soft**
+rule: it lives in the prompt and depends on the model choosing to follow it. That is the
+honest weakness of prompt-level instructions — the same reason an anti-hallucination
+*rule* can't stop a determined confabulation. Where a guarantee actually matters, the
+fix is to move it out of the prompt and into **code that runs regardless of the model's
+mood**.
+
+Hermes exposes shell hooks (configured under `hooks:` in `~/.hermes/config.yaml`,
+allowlisted once via `hermes hooks doctor` / `--accept-hooks`). A hook is an external
+command Hermes runs at a fixed point in the loop, reading a JSON event on stdin and
+optionally returning JSON on stdout. Zolander uses two:
+
+- **`hook_recall.py` (event: `pre_llm_call`).** Fires before the model is called and
+  can inject `{"context": "..."}` into the *user* message. On the first turn of a
+  session it runs `zol_session.py start` and feeds the recall + plan-tail into context —
+  so a new session begins *primed*, not blind, with **zero dependence on the model
+  remembering to recall.** Two design points that matter: (1) context is injected into
+  the user message, never the system prompt, so the **prompt cache prefix stays intact**
+  (verified against the Hermes plugin contract); (2) a **stamp-guard** (`$TMPDIR/
+  zol_recall_stamps`, keyed by session id) makes recall fire *once per session* — later
+  turns are a silent no-op, so the embedder doesn't reboot on every turn. Fail-safe: if
+  the memory backend is down it says so out loud instead of faking context.
+
+- **`hook_verify.py` (event: `pre_verify`).** Fires once per turn when the agent has
+  edited code and is about to declare "done". It mechanically checks that the files the
+  agent *actually changed* still parse (`py_compile` for `.py`, `json.load` for `.json`);
+  on a syntax break it returns `{"action": "continue", "message": ...}`, which **denies
+  the finish** and hands the error back until it's fixed. This is bounded
+  (`agent.max_verify_nudges`, default 3) and **fail-open** (`attempt >= 2` stops
+  nudging, so a genuinely stuck fix is never trapped in a loop). It only checks the
+  mechanically-decidable ("does it parse?") — it deliberately does **not** try to police
+  semantic claims like "this is thread-safe", because those *can't* be verified by code
+  and pretending otherwise would be its own hallucination.
+
+The split is the whole point: **data injection and mechanical verification belong in
+hooks (hard); judgement and style stay in the skill (soft).** Don't try to turn every
+soft rule into a hard lock — most are behaviours that don't have a mechanical test, and
+faking one just manufactures false confidence. Both scripts are self-contained
+(stdlib-only, `expanduser` paths), degrade quietly on any error (a hook must never crash
+the agent), and are wired in with a small `hooks:` block:
+
+```yaml
+# ~/.hermes/config.yaml  (paths are for the reference machine — edit them)
+hooks_auto_accept: true
+hooks:
+  pre_llm_call:
+    - command: /usr/bin/python3 /path/to/toolkit/hook_recall.py
+      timeout: 100
+  pre_verify:
+    - command: /usr/bin/python3 /path/to/toolkit/hook_verify.py
+      timeout: 30
+```
+
+> Honesty caveat: hooks are user-level config, not part of Hermes core, so a Hermes
+> update won't delete them — but if the hook API changes, re-verify the event names and
+> the `{"context": ...}` / `{"action": "continue"}` contracts. `hermes hooks doctor`
+> checks allowlist + a synthetic-payload smoke test.
 
 ## Roadmap (NOT yet implemented — this is the vision, stated as vision)
 
@@ -219,6 +282,9 @@ Dream      zolander_dream.py — nightly: decay -> distill L0->L1 -> ascend.py
 Engine     ascend.py (abstraction ladder), patterns.py (script detector),
            lens.py (double-take + local Lyapunov stability). Ported to YAR v5
            + native Lorentz distance. Quality bounded by embedder (roadmap #1).
+Hooks      hook_recall.py (pre_llm_call: inject recall once/session, cache-safe)
+           + hook_verify.py (pre_verify: deny "done" while changed .py/.json
+           don't parse, fail-open). Hard locks in code, not prompt convention.
 ```
 
 ## Quick start
