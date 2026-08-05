@@ -126,13 +126,24 @@ def ldist(a, b):
     return math.acosh(val)
 
 
-def cluster(rows, threshold=LDIST_THRESHOLD):
+def cluster(rows, threshold=LDIST_THRESHOLD, fold_singletons=True):
     """Greedy zhlukovanie podla LORENTZOVEJ vzdialenosti (mensie=blizsie, prah je
     HORNA hranica). Ked <3 polozky, jedna skupina (netreba embed).
-    FALLBACK: ak by zhlukovanie vyrobilo SAME singletony (nic sa neabstrahuje),
-    vrat vsetko ako JEDNU skupinu — den/vrstva sa ma vzdy zhrnut aspon raz."""
-    if len(rows) < 3:
+
+    fold_singletons=True: ak by zhlukovanie vyrobilo SAME singletony, vrat vsetko
+      ako JEDNU skupinu — vhodne pre najnizsi priecok L0->L1 (den sa ma vzdy zhrnut
+      aspon raz, aj ked su epizody roznorode).
+    fold_singletons=False: NEZLEPUJ nesuvisiace singletony — vhodne pre vyssie
+      priecky (L1->L2, L2->L3), kde dva NESUVISIACE principy sa nemaju nasilne
+      zliat do jedneho meta-ramca. Singletony sa vratia samostatne a step() ich
+      preskoci (princip vznikne az z >=2 skutocne blizkych zdrojov)."""
+    if len(rows) < 2:
         return [rows] if rows else []
+    # skratka "vsetko do jednej skupiny bez embedu" plati LEN ked chceme zlepovat
+    # (fold_singletons); inak musime realne zmerat vzdialenost aj pri malo datach,
+    # aby sa dva nesuvisiace koncepty nezliali len preto ze su len dva.
+    if len(rows) < 3 and fold_singletons:
+        return [rows]
     vecs = embed_many([r.get("text", "") for r in rows])
     groups = []            # list of [rows]
     reps = []
@@ -146,7 +157,7 @@ def cluster(rows, threshold=LDIST_THRESHOLD):
         if not placed:
             reps.append(v)
             groups.append([r])
-    if all(len(g) < 2 for g in groups):
+    if fold_singletons and all(len(g) < 2 for g in groups):
         return [rows]
     return groups
 
@@ -190,7 +201,16 @@ def step(from_layer, to_layer, model="opus", dry=False):
     if len(src) < 2:
         log(f"step {from_layer}->{to_layer}: len {len(src)} zdrojov (<2), preskakujem")
         return {"from": from_layer, "to": to_layer, "created": [], "note": "malo zdrojov"}
-    groups = cluster(src)
+    # LLM-asistovany clustering (Roadmap #1): LLM zoskupi podla PRINCIPU, nie
+    # povrchovych slov (cross-domain, kde cisty embedding zlyhava — PLAN §20).
+    # Fallback na embedding je vnutri llm_cluster (ak LLM zlyha/nedostupny).
+    from cluster_llm import llm_cluster
+    groups = llm_cluster(src, embed_many, ldist, LDIST_THRESHOLD,
+                         model=model, log_fn=log)
+    # fold_singletons len na najnizsom priecku (L0->L1): den sa ma zhrnut vzdy,
+    # aj ked LLM epizody rozdelil na samostatne. Vyssie priecky NEZLEPUJEME.
+    if from_layer == "L0" and all(len(g) < 2 for g in groups):
+        groups = [src]
     created = []
     for g in groups:
         if len(g) < 2:

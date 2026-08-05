@@ -43,6 +43,79 @@ VENV_YAR = os.path.join(ROOT, ".venv-yar", "bin", "python")
 EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 
 
+# ---------- rezim 0: MECHANICKA brana (should_double_take) ----------
+# Hermes nema event-hooky, takze double-take sa neda spravit ako callback.
+# Toto je deterministicky (LLM-free) klasifikator: rozhodne CI si otazka zasluzi
+# dvojity pohlad, aby lift nebezal na "ahoj". Skill-konvencia (SKILL.md) vola
+# `gate` PRED vaznou odpovedou; ak SERIOUS -> lift, inak preskoc (setri cas/LLM).
+
+# signaly vaznosti (rozhodnutie/rada/strategia/protichodne moznosti/preco)
+_SERIOUS_MARKERS = [
+    "mam ", "mám ", "oplati", "oplatí", "je lepsie", "je lepšie", "mal by",
+    "malo by", "mala by", "rozhodn", "strateg", "preco", "prečo", "za a proti",
+    "dilema", "dlhodob", "risk", "riziko", "investi", "kariér", "karier",
+    "should i", "worth it", "better to", "trade-off", "tradeoff", "dôsledk",
+    "dosledk", "smerovanie", "vziat", "vziať", "odist", "odísť", "zmenit prac",
+    "vztah", "vzťah", "buducnost", "budúcnost", "zavazok", "záväzok",
+]
+# trivialne (nikdy netreba double-take)
+_TRIVIAL = ["ahoj", "cau", "čau", "dik", "ďik", "dakujem", "ďakujem", "ok",
+            "hej", "no", "ano", "áno", "nie", "vdaka", "vďaka", "cus", "čus"]
+
+
+def should_double_take(text):
+    """Deterministicky (bez LLM) rozhodni ci otazka/situacia si zasluzi dvojity
+    pohlad. Vrat (serious: bool, dovod: str, skore: int).
+
+    Heuristika (zamerne konzervativna — radsej double-take navyse nez vynechat vazne):
+      - trivialny pozdrav/potvrdenie sam osebe -> nikdy
+      - inak skore z: dlzka, otaznik pri rozhodovacich slovach, serious markery,
+        pritomnost viacerych moznosti (alebo/vs/ci). skore>=2 -> SERIOUS.
+    """
+    t = (text or "").strip().lower()
+    if not t:
+        return False, "prazdny vstup", 0
+    # ciste trivialne (kratke a len pozdrav/potvrdenie)
+    words = t.split()
+    if len(words) <= 3 and any(t.startswith(w) for w in _TRIVIAL):
+        return False, "trivialny pozdrav/potvrdenie", 0
+
+    score = 0
+    reasons = []
+    n_markers = sum(1 for m in _SERIOUS_MARKERS if m in t)
+    if n_markers:
+        score += min(n_markers, 3)
+        reasons.append(f"{n_markers} serious marker(ov)")
+    # viacero moznosti = rozhodovanie
+    if any(sep in t for sep in (" alebo ", " vs ", " ci ", " či ", " a/alebo ")):
+        score += 1
+        reasons.append("viacero moznosti (rozhodovanie)")
+    # dlhsi, komplexny vstup
+    if len(words) >= 25:
+        score += 1
+        reasons.append("dlhy/komplexny vstup")
+    # otaznik + rozhodovacie slovo uz pokryte markermi; samotny otaznik pri dlzke
+    if "?" in t and len(words) >= 8:
+        score += 1
+        reasons.append("otazka nezanedbatelnej dlzky")
+
+    serious = score >= 2
+    dovod = "; ".join(reasons) if reasons else "ziadne signaly vaznosti"
+    return serious, dovod, score
+
+
+def gate(problem, model="opus"):
+    """Brana: klasifikuj -> ak SERIOUS spusti lift, inak preskoc.
+    Vrat dict {double_take: bool, dovod, skore, lift?: {...}}."""
+    serious, dovod, score = should_double_take(problem)
+    res = {"double_take": serious, "dovod": dovod, "skore": score}
+    if serious:
+        res["lift"] = lift(problem, model=model)
+    else:
+        res["note"] = "trivialne — double-take preskoceny (setrim cas/LLM)"
+    return res
+
+
 # ---------- rezim 1: dvojity pohlad (lift) ----------
 
 LIFT_SYSTEM = """Si Zolander — dekonstrukcny nastroj na luciditu, nie potapkavac.
@@ -160,7 +233,11 @@ def stability(obj):
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "lift"
-    if cmd == "lift":
+    if cmd == "gate":
+        obj = json.loads(sys.stdin.read())
+        model = obj.get("model", "opus")
+        print(json.dumps(gate(obj["problem"], model=model), ensure_ascii=False, indent=2))
+    elif cmd == "lift":
         obj = json.loads(sys.stdin.read())
         model = obj.get("model", "opus")
         print(json.dumps(lift(obj["problem"], model=model), ensure_ascii=False, indent=2))
