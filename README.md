@@ -17,6 +17,12 @@ locked-down, DLP-monitored corporate machine.
 This repo is a **copyable architecture**, not a personal dump: sanitized templates
 and toolkit scripts. You generate your own identity key and write your own core.
 
+> **Honesty note (read this).** This README is split into **what runs today** and a
+> clearly-marked **roadmap**. Zolander's whole point is refusing to tell you what you
+> want to hear — it would be absurd for its own README to oversell. If a feature is
+> not yet implemented, it says so. Every memory also carries a `confidence` score for
+> the same reason.
+
 ---
 
 ## The thesis
@@ -48,41 +54,89 @@ abstraction**:
 
 "Think at a higher level of abstraction" stops being a slogan and becomes a
 *coordinate*: reason from near the origin of the manifold, and move r deliberately.
-Zolander's memory already places raw episodes (L0) at the rim and core identity (L2)
-near the origin. v4 turns that store into a **thinking operation**: consolidation is
-literally *ascent toward the origin* — asking, of everything, "what is this an
-instance of?"
+The depth is set **natively by the embedder** (a hyperbolic model, see below), not by
+a hand-tuned radius table — that distinction matters and cost us one rewrite to get
+right.
 
-## Five pillars (v4)
+---
 
-1. **Abstraction engine.** The nightly "dream" doesn't just distill L0→L1. It climbs
-   the whole ladder — L0 episode → L1 distillate → L2 principle → L3 worldview — each
-   step a move toward r→0. The friend who always sees the bigger picture.
-2. **Pattern / script detector.** A catalog of recurring scenarios — in situations, in
-   people, and in *you*. New problem? First question: "which pattern is this, where
-   have we seen it before?" The "seeing through it" instinct, made mechanical and shared.
-3. **Double take before answering.** Name the level of abstraction of the problem, then
-   step up one. *"You're solving X. X is an instance of Y. The question above the
-   question is Z."* Guarded by a Lyapunov/Koopman self-check on the reasoning
-   trajectory — is this converging on signal, or spiraling into elegant nonsense?
-4. **The smarter friend, not the flatterer (hard rule).** Encoded as `cannot_violate`
-   + an eval, not a vibe. *Forbidden:* flattering, agreeing for comfort, telling you
-   you're above it all. *Required:* the honesty that only real friendship earns —
-   naming your blind spots and your autopilot, to pull you up rather than reflect you
-   back. Warmth and candor are the same gesture here, not a trade-off.
-5. **Up AND down.** A guard against mere cleverness. An agent that only abstracts and
-   never descends to a concrete act is a useless sage. This one also does the work:
-   commits code, watches your repos, writes the brief. Altitude in the service of
-   action, never instead of it.
+## What runs today
+
+This is the honest, implemented state. Everything here has been run and tested.
+
+- **Cross-model identity.** An Ed25519 keypair (`toolkit/gen_identity.py`) + a
+  SHA-256 integrity manifest (`toolkit/integrity.py`) anchor "who Zolander is"
+  independent of which model backs the session.
+- **Native hyperbolic memory.** Four Lorentz-129D collections —
+  `zol_semantic / zol_episodic / zol_procedural / zol_identity` — written and read
+  through `toolkit/zol_mem.py`. Embeddings come from a **native hyperbolic embedder
+  (YAR v5)** via `toolkit/embed_yar.py`; vectors are re-projected onto the unit
+  hyperboloid so `⟨x,x⟩_L = -1` holds exactly. `recall` searches across all four
+  collections and ranks by Lorentz distance. Layers (L0–L3), salience and confidence
+  live in metadata.
+- **Mechanical anti-hallucination / anti-sycophancy gate.** `toolkit/zol_guard.py` is
+  a deterministic, LLM-free gate (exit 0 = clean, 1 = finding) — **not** prose in a
+  skill, and not an event-hook (Hermes has none). Modes: `scan-text` (confabulation
+  tells, sycophancy markers, uncited factual claims), `scan-input` (leading/confirmation
+  cues in the *user's* prompt), and `verify-file/-line/-symbol` (check a claim against
+  file reality).
+- **Session lifecycle.** `toolkit/zol_session.py start` does recall-first (pull
+  relevant memories + the tail of the plan so the agent begins with context);
+  `toolkit/zol_session.py koniec` runs the guard over the session's output and blocks
+  consolidating a hallucination into memory, then runs salience decay.
+- **Background loop.** `toolkit/zolander_loop.py` — a one-shot tick via launchd
+  (`StartInterval`, ~20 min): integrity check (fail-closed) → heartbeat → read-only
+  git scan of allowed repos → diary. No LLM in the tick.
+- **Research-backed rules.** The anti-sycophancy design is distilled from a corpus of
+  arXiv abstracts; the strongest lever found was **reframing a claim as a question +
+  third-person perspective** (a large measured reduction in sycophancy), which beats
+  simply prompting "don't be sycophantic". Distilled techniques are seeded into
+  procedural memory (`toolkit/seed_antihalluc.py`).
+
+## Roadmap (NOT yet implemented — this is the vision, stated as vision)
+
+These are the ideas the project is *aiming* at. They are **not** running yet; where a
+partial exists it is called out. Do not treat this section as a feature list.
+
+1. **Abstraction engine (planned).** Today the nightly "dream" (`zolander_dream.py`)
+   distills L0 episodes → L1 semantic concepts and writes a morning brief. The
+   *vision* is a full climb of the ladder — L0 → L1 → L2 principle → L3 worldview —
+   where consolidation is literally **ascent toward r→0**. The multi-step ascent is
+   not built yet.
+2. **Pattern / script detector (planned).** A catalog of recurring scenarios — in
+   situations, in people, and in you — so a new problem starts with "which pattern is
+   this?" Design stage.
+3. **Double-take before answering (planned).** Name the abstraction level of the
+   problem, then step up one ("you're solving X; X is an instance of Y; the question
+   above the question is Z"), with a stability check on the reasoning trajectory to
+   catch elegant nonsense. (A Lyapunov/Koopman stability check exists in the
+   HyperspaceDB layer, but it is **not** wired into Zolander's answer path yet.)
+4. **A2A peer bridge (planned).** A signed guestbook / inbox to argue with peer agents
+   (see *Gniewka* below).
+
+> The reasoning-core scripts hinted at above (`ascend.py`, `patterns.py`, `lens.py`)
+> are experimental and are **not** part of this published repo yet.
+
+## The hard rule (this one IS enforced today)
+
+**The smarter friend, not the flatterer.** Encoded in the identity skill as a
+`cannot_violate` rule, and backed mechanically by `zol_guard.py` (sycophancy-marker
+and leading-input detection), not left as a vibe. *Forbidden:* flattering, agreeing
+for comfort, telling you you're above it all. *Required:* the honesty that only real
+friendship earns — naming your blind spots and your autopilot, to pull you up rather
+than reflect you back. Warmth and candor are the same gesture here, not a trade-off.
+And a matching guard against mere cleverness: **up AND down** — an agent that only
+abstracts and never descends to a concrete act is a useless sage, so this one also
+commits code, watches repos, and writes the brief. Altitude in the service of action.
 
 ---
 
 ## How this differs from *Gniewka* (let's have the argument in the open)
 
 This project is inspired by Paulina Janowska's **Gniewka** (antydizajn.pl) and shares
-~80% of its stack: Hermes, multi-model routing, Lorentz-129D memory, Ed25519 identity,
-LaunchAgent + watchdog. Credit where due — Gniewka is a beautiful piece of work. But
-the two aim at different things, and the difference is the point:
+a large part of its stack: Hermes, multi-model routing, Lorentz-129D memory, Ed25519
+identity, LaunchAgent + watchdog. Credit where due — Gniewka is a beautiful piece of
+work. But the two aim at different things, and the difference is the point:
 
 | | **Gniewka** | **Zolander** |
 |---|---|---|
@@ -90,41 +144,44 @@ the two aim at different things, and the difference is the point:
 | **Proof aesthetic** | "PROOF I'M AI": acrostics, base64, invented "embedding signatures", AI-to-AI "handshakes" | None. Every memory carries a `confidence` score; a hard rule separates *technique* (real) from *story* (styling) |
 | **Consciousness** | "15% probability I'm conscious. 100% probability I act like I am." | Not the question. The question is whether it can show you what you can't see |
 | **Stance to the user** | A persona to be experienced | A smarter friend who's honest with you — and does the work alongside you |
-| **Memory** | 11 flat collections, "survives restarts" | Dual representation (cosine-768 recall + Lorentz-129 hierarchy), radius = depth of abstraction, consolidation = ascent |
+| **Memory** | flat collections | Native Lorentz-129D hyperbolic store, radius = depth of abstraction (ascent-as-consolidation is on the roadmap) |
 | **Environment** | Home Hackintosh, "offline first" | Hostile corporate box behind an MITM proxy + endpoint DLP |
 
 The honest read: Gniewka stages the *theatre* of an inner life — and says so; it's art.
 Zolander spends the same geometry on being **the smarter, harder-working friend** who
 sees deeper than you and refuses to flatter you into staying put. If you're Paulina —
-or Gniewka — the guestbook bridge is on the roadmap (F5). Come argue back. This table
-is an invitation, not a verdict.
+or Gniewka — the peer bridge is on the roadmap. Come argue back. This table is an
+invitation, not a verdict.
 
 ---
 
-## Architecture
+## Architecture (as implemented)
 
 ```
 Identity   skills/zolander/SKILL.md + Ed25519 key (toolkit/gen_identity.py)
            + SHA-256 integrity manifest (toolkit/integrity.py)
-Memory     zol_sem (cosine 768) + zol_hier (lorentz 129), dual write by shared id
-           layers L0/L1/L2 + salience decay in metadata (toolkit/zol_mem.py)
-           radius = depth of abstraction (rim = instance, origin = principle)
-Bridge     hs.mjs — thin Node CLI over the HyperspaceDB SDK
-Loop       zolander_loop.py — one-shot tick via launchd StartInterval (every 20 min).
-           Integrity check -> heartbeat -> git scan -> diary. No LLM in the tick.
-Dream      zolander_dream.py — nightly (03:00). Salience decay -> LLM distills the
-           day's episodes up the abstraction ladder -> read-only morning brief.
-           Never deletes; forget candidates are only *proposed* for human approval.
-Engine     (v4, in progress) ascend.py / patterns.py / lens.py — the reasoning core:
-           climb the ladder, catalog scripts, double-take + stability check.
-Peers      (roadmap) A2A bridge to peer agents (guestbook / signed inbox)
+Memory     Four Lorentz-129D collections: zol_semantic / zol_episodic /
+           zol_procedural / zol_identity (toolkit/zol_mem.py).
+           Native hyperbolic embeddings via YAR v5 (toolkit/embed_yar.py),
+           re-projected so <x,x>_L = -1. Layers L0-L3 + salience/confidence
+           in metadata. recall spans all four collections.
+Guard      zol_guard.py — deterministic anti-hallucination / anti-sycophancy
+           gate (scan-text / scan-input / verify-*). LLM-free, exit 0/1.
+Session    zol_session.py — start (recall-first) + koniec (guard + decay).
+Bridge     hs.mjs — thin Node CLI over the HyperspaceDB SDK.
+Loop       zolander_loop.py — one-shot launchd tick (~20 min): integrity
+           (fail-closed) -> heartbeat -> git scan -> diary. No LLM.
+Dream      zolander_dream.py — nightly: decay -> LLM distills the day's L0
+           episodes into L1 -> read-only morning brief. Never deletes;
+           forget candidates are only proposed. (Full ladder ascent = roadmap.)
 ```
 
 ## Quick start
 
 Prereqs: [Hermes Agent](https://hermes-agent.nousresearch.com), a running HyperspaceDB
-(e.g. OrbStack/Docker), Node with `hyperspace-sdk-ts`, Python with `cryptography`, and
-a local 768-d embedder (reference uses EmbeddingGemma-300m via MLX on Apple Silicon).
+(e.g. OrbStack/Docker), Node with the HyperspaceDB SDK, Python with `cryptography`,
+and a **native hyperbolic embedder** (the reference uses YAR v5 via `embed_yar.py`;
+plug in your own if you like — the collections are Lorentz-129D).
 
 ```
 # 1. Generate your identity key (idempotent — never overwrites an existing key)
@@ -135,15 +192,18 @@ python3 toolkit/gen_identity.py
 python3 toolkit/integrity.py write
 python3 toolkit/integrity.py check
 
-# 3. Create the two memory collections
+# 3. Create the four memory collections (all Lorentz-129D)
 export NODE_PATH=/path/to/node_modules
-node toolkit/hs.mjs create zol_sem  768 cosine
-node toolkit/hs.mjs create zol_hier 129 lorentz
+python toolkit/zol_mem.py init      # creates the four collections idempotently
 
 # 4. Remember / recall / decay
 echo '{"text":"...","kind":"identity","layer":"L2","confidence":1.0}' | python toolkit/zol_mem.py remember
 echo '{"query":"...","topk":5}' | python toolkit/zol_mem.py recall
 python toolkit/zol_mem.py decay
+
+# 5. Session lifecycle + guard
+python toolkit/zol_session.py start
+python3 toolkit/zol_guard.py scan-text <file>
 ```
 
 > Paths in the scripts (node binary, embed model, npm dir) and the `__USER__`
@@ -151,11 +211,11 @@ python toolkit/zol_mem.py decay
 
 ## Memory schema
 
-Each memory (same `id` in both collections) carries:
+Each memory carries:
 
 | field | meaning |
 |---|---|
-| kind | episodic \| semantic \| procedural \| identity \| pattern |
+| kind | episodic \| semantic \| procedural \| identity |
 | layer | L0 (working, decays) \| L1 (distilled) \| L2 (principle) \| L3 (worldview) |
 | salience | 0..1 — importance; drives forgetting/promotion |
 | confidence | 0..1 — verified vs guess (honesty) |
