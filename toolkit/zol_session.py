@@ -22,6 +22,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 VPY = "/Users/__USER__/zolander/.venv-yar/bin/python"
 ZOL_MEM = os.path.join(HERE, "zol_mem.py")
 ZOL_GUARD = os.path.join(HERE, "zol_guard.py")
+LENS = os.path.join(HERE, "lens.py")
+PATTERNS = os.path.join(HERE, "patterns.py")
 PLAN = "/Users/__USER__/zolander/PLAN.md"
 SYS_PY = "/usr/bin/python3"
 
@@ -102,14 +104,51 @@ def cmd_koniec():
           "(kind=episodic) IBA ak guard čistý ===")
 
 
+def cmd_lens():
+    """Double-take pred vážnou odpoveďou: deleguje na lens.py lift.
+    Vstup: argv[2] = problém/situácia (alebo stdin)."""
+    problem = sys.argv[2] if len(sys.argv) > 2 else sys.stdin.read().strip()
+    if not problem:
+        print("pouzitie: zol_session.py lens \"<problem>\"", file=sys.stderr)
+        sys.exit(2)
+    # lens lift potrebuje palantir_client (LLM) — beží pod sys python (stdlib urllib)
+    rc, out, err = _run([SYS_PY, LENS, "lift"],
+                        stdin=json.dumps({"problem": problem}))
+    if rc == 0:
+        print(out.strip())
+    else:
+        print("lens lift zlyhal:", err[-300:], file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_pattern():
+    """Detektor vzorcov: 'akého vzorca je toto inštancia?'. Deleguje na patterns.py detect.
+    Vstup: argv[2] = situácia. Embedding beží cez .venv-yar (YAR v5)."""
+    situation = sys.argv[2] if len(sys.argv) > 2 else sys.stdin.read().strip()
+    if not situation:
+        print("pouzitie: zol_session.py pattern \"<situacia>\"", file=sys.stderr)
+        sys.exit(2)
+    rc, out, err = _run([VPY, PATTERNS, "detect"],
+                        stdin=json.dumps({"situation": situation}))
+    if rc == 0:
+        print(out.strip())
+    else:
+        print("patterns detect zlyhal:", err[-300:], file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "start"
     if cmd == "start":
         cmd_start()
     elif cmd == "koniec":
         cmd_koniec()
+    elif cmd == "lens":
+        cmd_lens()
+    elif cmd == "pattern":
+        cmd_pattern()
     else:
-        print(f"neznámy režim: {cmd} (start|koniec)", file=sys.stderr)
+        print(f"neznámy režim: {cmd} (start|koniec|lens|pattern)", file=sys.stderr)
         sys.exit(2)
 
 

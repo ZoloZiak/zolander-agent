@@ -74,6 +74,28 @@ def embed_one(text):
     return embed_batch([text])[0]
 
 
+def embed_many(texts):
+    """List[str] -> List[129D Lorentz vektor]. Import helper pre ascend/patterns/lens.
+    Rešpektuje BATCH. Prázdny zoznam -> []."""
+    out = []
+    for i in range(0, len(texts), BATCH):
+        out.extend(embed_batch(texts[i:i + BATCH]))
+    return out
+
+
+def lorentz_dist(a, b):
+    """Natívna Lorentzova (hyperboloidová) vzdialenosť dvoch 129D bodov.
+    d = arccosh(-<a,b>_L), kde <a,b>_L = -a0*b0 + suma(ai*bi).
+    Menšie = bližšie. Nahrádza cosine pri clusteringu (sme v hyperbolickom
+    priestore, cosine tu nedáva zmysel). Robustné voči fp: -<a,b> >= 1."""
+    import math
+    mink = -a[0] * b[0] + sum(x * y for x, y in zip(a[1:], b[1:]))
+    val = -mink
+    if val < 1.0:
+        val = 1.0  # fp guard: arccosh definované len pre >=1
+    return math.acosh(val)
+
+
 def main():
     items = []
     for line in sys.stdin:
