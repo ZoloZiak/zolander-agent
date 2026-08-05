@@ -54,7 +54,19 @@ def embed_batch(texts):
               return_tensors="pt").to(DEVICE)
     with torch.no_grad():
         vecs = model(**enc, target_dim=TARGET_DIM)
-    return vecs.tolist()
+    return [_reproject(v) for v in vecs.tolist()]
+
+
+def _reproject(v):
+    """Re-projektuj na Lorentz hyperboloid tak, aby -x0^2+|x|^2 = -1 platilo
+    PRESNE. Model dava fp32 s malou chybou (~1e-6) a hs.mjs validuje prisne
+    (ERR 'not on unit hyperboloid'). x0 je zavisla suradnica: x0 = sqrt(1+|x|^2).
+    Priestorovu cast (v[1:]) berieme ako pravdu, x0 dopocitame."""
+    import math
+    space = v[1:]
+    s2 = sum(c * c for c in space)
+    x0 = math.sqrt(1.0 + s2)
+    return [x0] + space
 
 
 def embed_one(text):

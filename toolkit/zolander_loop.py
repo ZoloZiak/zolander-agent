@@ -44,9 +44,12 @@ def log(msg):
 
 
 def check_integrity():
-    """True ak identita nedotknuta. Ak skript chyba, povazuj za OK (F1 nemusi byt)."""
+    """True IBA ak integrity.py existuje a check prejde. FAIL-CLOSED:
+    ak skript chyba (zmazany/presunuty), povazuj za PORUSENIE (return False),
+    nie za OK. Absencia kontroly nesmie byt tichy priechod (audit §13)."""
     if not os.path.exists(INTEGRITY):
-        return True
+        log("INTEGRITY SKRIPT CHYBA (%s) — fail-closed, tick prerušený." % INTEGRITY)
+        return False
     p = subprocess.run([sys.executable, INTEGRITY, "check"],
                        capture_output=True, text=True)
     return p.returncode == 0
