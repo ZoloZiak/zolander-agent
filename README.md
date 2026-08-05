@@ -92,30 +92,50 @@ This is the honest, implemented state. Everything here has been run and tested.
   third-person perspective** (a large measured reduction in sycophancy), which beats
   simply prompting "don't be sycophantic". Distilled techniques are seeded into
   procedural memory (`toolkit/seed_antihalluc.py`).
+- **Abstraction ladder in the nightly dream.** `toolkit/zolander_dream.py` runs decay,
+  distills the day's L0 episodes → L1, and then calls `toolkit/ascend.py` to climb the
+  higher rungs L1 → L2 (principle) → L3 (worldview) — each step a move toward r→0
+  ("what is this an instance of?"). New higher concepts are only *added* (never
+  deletes; forget candidates are proposed in the morning brief). Clustering uses native
+  Lorentz distance on YAR-v5 vectors.
+- **Pattern / script detector.** `toolkit/patterns.py` (`detect` / `learn` / `mine`)
+  catalogs recurring scripts — in situations, in people, in you — stored as `semantic`
+  L2 memories prefixed `VZOREC:`. *Honest limitation:* the YAR-v5 embedder is weak at
+  cross-domain topical similarity, so a pure-vector match alone won't link "guitar
+  gathering dust" to "projects left unfinished". The detector handles this with a
+  two-stage gate — a tight vector threshold for near-identical hits, and an **LLM
+  re-check** in a wider window for cross-domain patterns. It never auto-saves; new
+  patterns are proposed for approval (`learn`).
+- **Double-take + stability self-check.** `toolkit/lens.py` has two modes: `lift`
+  (name the abstraction level, step up one — "X is an instance of Y; the question above
+  the question is Z" — then descend back to a concrete action) and `stability`, a
+  local Lyapunov-style check that measures whether a reasoning trajectory converges on
+  signal or spirals into elegant nonsense. Distances are measured **natively in Lorentz
+  space** (arccosh), not Euclidean. Reachable via `zol_session.py lens` / `pattern`.
+
+> Note on the stability check: this is a **local** Lyapunov proxy, not the HyperspaceDB
+> MCP `analyze_thought_stability` (that one needs an MCP connection the daemon doesn't
+> have, and its Möbius math degenerates at the ball boundary). Same interpretation
+> (negative exponent = contraction = convergence), computed on native Lorentz vectors.
 
 ## Roadmap (NOT yet implemented — this is the vision, stated as vision)
 
 These are the ideas the project is *aiming* at. They are **not** running yet; where a
 partial exists it is called out. Do not treat this section as a feature list.
 
-1. **Abstraction engine (planned).** Today the nightly "dream" (`zolander_dream.py`)
-   distills L0 episodes → L1 semantic concepts and writes a morning brief. The
-   *vision* is a full climb of the ladder — L0 → L1 → L2 principle → L3 worldview —
-   where consolidation is literally **ascent toward r→0**. The multi-step ascent is
-   not built yet.
-2. **Pattern / script detector (planned).** A catalog of recurring scenarios — in
-   situations, in people, and in you — so a new problem starts with "which pattern is
-   this?" Design stage.
-3. **Double-take before answering (planned).** Name the abstraction level of the
-   problem, then step up one ("you're solving X; X is an instance of Y; the question
-   above the question is Z"), with a stability check on the reasoning trajectory to
-   catch elegant nonsense. (A Lyapunov/Koopman stability check exists in the
-   HyperspaceDB layer, but it is **not** wired into Zolander's answer path yet.)
-4. **A2A peer bridge (planned).** A signed guestbook / inbox to argue with peer agents
+1. **Fuller abstraction quality.** The ladder (L0→L1→L2→L3) runs today, but the
+   quality of the climb is bounded by the embedder's weak topical clustering (see the
+   pattern-detector limitation above) — grouping leans on an LLM step. A better
+   hyperbolic embedder, or LLM-assisted clustering, would sharpen the ascent.
+2. **Automatic double-take.** `lens.py` exists and is reachable, but nothing yet forces
+   a double-take *before every serious answer* automatically — today it's invoked
+   deliberately, not wired into the answer path as a mandatory gate.
+3. **A2A peer bridge (planned).** A signed guestbook / inbox to argue with peer agents
    (see *Gniewka* below).
 
-> The reasoning-core scripts hinted at above (`ascend.py`, `patterns.py`, `lens.py`)
-> are experimental and are **not** part of this published repo yet.
+> The reasoning-core scripts `ascend.py`, `patterns.py` and `lens.py` are now part of
+> this repo, ported to the native YAR-v5 / Lorentz-129D memory and reachable via
+> `zol_session.py`. Their *quality* is still bounded by the embedder (see roadmap #1).
 
 ## The hard rule (this one IS enforced today)
 
@@ -167,13 +187,17 @@ Memory     Four Lorentz-129D collections: zol_semantic / zol_episodic /
            in metadata. recall spans all four collections.
 Guard      zol_guard.py — deterministic anti-hallucination / anti-sycophancy
            gate (scan-text / scan-input / verify-*). LLM-free, exit 0/1.
-Session    zol_session.py — start (recall-first) + koniec (guard + decay).
+Session    zol_session.py — start (recall-first) + koniec (guard + decay)
+           + lens (double-take) + pattern (script detector) entry points.
 Bridge     hs.mjs — thin Node CLI over the HyperspaceDB SDK.
 Loop       zolander_loop.py — one-shot launchd tick (~20 min): integrity
            (fail-closed) -> heartbeat -> git scan -> diary. No LLM.
-Dream      zolander_dream.py — nightly: decay -> LLM distills the day's L0
-           episodes into L1 -> read-only morning brief. Never deletes;
-           forget candidates are only proposed. (Full ladder ascent = roadmap.)
+Dream      zolander_dream.py — nightly: decay -> distill L0->L1 -> ascend.py
+           climbs L1->L2->L3 (toward r->0) -> read-only morning brief. Never
+           deletes; forget candidates are only proposed.
+Engine     ascend.py (abstraction ladder), patterns.py (script detector),
+           lens.py (double-take + local Lyapunov stability). Ported to YAR v5
+           + native Lorentz distance. Quality bounded by embedder (roadmap #1).
 ```
 
 ## Quick start

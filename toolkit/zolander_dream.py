@@ -24,10 +24,13 @@ DENNIKY = os.path.join(ROOT, "denniky")
 LOGS = os.path.join(ROOT, "logs")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 ZOL_MEM = os.path.join(ROOT, "toolkit", "zol_mem.py")
+ASCEND = os.path.join(ROOT, "toolkit", "ascend.py")
 DREAMLOG = os.path.join(LOGS, "dream.log")
-VPY = "/Users/__USER__/.local/share/uv/tools/vmlx/bin/python"
+# zol_mem/ascend potrebuju YAR v5 embedder (torch) -> dedikovany .venv-yar,
+# NIE stary vmlx python ani /usr/bin/python3 (tie torch nemaju).
+VPY = os.path.join(ROOT, ".venv-yar", "bin", "python")
 
-sys.path.insert(0, os.path.join(HOME, "zolo2.0", "toolkit"))  # TODO: point to your palantir_client.py dir
+sys.path.insert(0, os.path.join(HOME, "zolo2.0", "toolkit"))
 
 
 def now():
@@ -42,7 +45,7 @@ def log(msg):
 
 def run_decay():
     """Zavola zol_mem.py decay, vrati dict {forget, promote, kept} alebo {}."""
-    p = subprocess.run([sys.executable, ZOL_MEM, "decay"],
+    p = subprocess.run([VPY, ZOL_MEM, "decay"],
                        capture_output=True, text=True)
     if p.returncode != 0:
         log(f"decay zlyhal: {p.stderr[-300:]}")
@@ -110,7 +113,29 @@ def remember_l1(text):
         return None
 
 
-def write_brief(decay_res, episodes, distilled, new_id):
+def ascend_higher(model="gpt-mini"):
+    """F8: po dennom L0->L1 (consolidate) dvihni pamat vyssie po rebriku
+    L1->L2 a L2->L3 cez ascend.py. L0->L1 uz spravil consolidate() nizsie,
+    takze tu len vyssie priecky (inak by vznikol duplicitny L1).
+    Vrati zoznam vytvorenych vyssich konceptov."""
+    created = []
+    for fr, to in (("L1", "L2"), ("L2", "L3")):
+        p = subprocess.run([VPY, ASCEND, "step", "--from", fr, "--to", to,
+                            "--model", model], capture_output=True, text=True)
+        if p.returncode != 0:
+            log(f"ascend {fr}->{to} zlyhal: {p.stderr[-300:]}")
+            continue
+        try:
+            res = json.loads(p.stdout.strip())
+            for c in res.get("created", []):
+                created.append(c)
+        except Exception as e:
+            log(f"ascend {fr}->{to} parse zlyhal: {e!r}")
+    log(f"ascend_higher: vytvorene vyssie koncepty={len(created)}")
+    return created
+
+
+def write_brief(decay_res, episodes, distilled, new_id, ascended=None):
     day = datetime.date.today().isoformat()
     path = os.path.join(DENNIKY, f"brief_{day}.md")
     os.makedirs(DENNIKY, exist_ok=True)
@@ -123,6 +148,13 @@ def write_brief(decay_res, episodes, distilled, new_id):
             f.write(f"\n## Nový L1 koncept (id={new_id})\n> {distilled}\n")
         else:
             f.write("\n## Konsolidácia\n- nič nové na destiláciu\n")
+        if ascended:
+            f.write("\n## Výstup po rebríku abstrakcie (F8 — bližšie k jadru)\n")
+            for c in ascended:
+                lyr = c.get("layer", "?")
+                cid = c.get("id", "?")
+                frm = ",".join(str(i) for i in c.get("from_ids", []))
+                f.write(f"- **{lyr}** (id={cid}, z {frm}): {c.get('text', '')}\n")
         f.write("\n## NÁVRHY na zabudnutie (rozhodni ty — nič som nezmazal)\n")
         if forget:
             for fid in forget:
@@ -139,8 +171,10 @@ def dream():
     episodes = todays_episodes(rows)
     distilled = consolidate(episodes)
     new_id = remember_l1(distilled) if distilled else None
-    brief = write_brief(decay_res, episodes, distilled, new_id)
-    log(f"sen OK | epizod={len(episodes)} | novy_L1={new_id} | brief={os.path.basename(brief)}")
+    ascended = ascend_higher(model="gpt-mini")  # F8: dvihni L1->L2->L3
+    brief = write_brief(decay_res, episodes, distilled, new_id, ascended=ascended)
+    log(f"sen OK | epizod={len(episodes)} | novy_L1={new_id} | "
+        f"vyssie={len(ascended)} | brief={os.path.basename(brief)}")
     return 0
 
 
