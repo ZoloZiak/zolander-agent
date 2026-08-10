@@ -93,6 +93,10 @@ def lorentz_dist(a, b):
     val = -mink
     if val < 1.0:
         val = 1.0  # fp guard: arccosh definované len pre >=1
+    elif val > 1e6:
+        val = 1e6  # fp guard (red-team #3): pri obrom r stráca acosh presnosť; nad
+                   # ~1e6 (acosh≈14.5) su body uz nerozlisitelne "velmi daleko", clip
+                   # zreze zaokrуhlovaci sum bez straty uzitocnej informacie.
     return math.acosh(val)
 
 

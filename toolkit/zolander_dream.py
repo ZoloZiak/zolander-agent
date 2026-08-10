@@ -101,6 +101,8 @@ def _ldist(a, b):
     val = -mink
     if val < 1.0:
         val = 1.0
+    elif val > 1e6:
+        val = 1e6  # fp guard (red-team #3): clip proti strate presnosti acosh pri obrom r
     return math.acosh(val)
 
 
@@ -186,7 +188,7 @@ def ascend_higher(model="gpt-mini"):
     return created
 
 
-def write_brief(decay_res, episodes, distilled_l1, ascended=None):
+def write_brief(decay_res, episodes, distilled_l1, ascended=None, merges=None):
     """distilled_l1 = list dictov {text, from_ids, id} novych L1 konceptov."""
     day = datetime.date.today().isoformat()
     path = os.path.join(DENNIKY, f"brief_{day}.md")
@@ -217,7 +219,17 @@ def write_brief(decay_res, episodes, distilled_l1, ascended=None):
                 f.write(f"- [ ] id={fid} — nízka salience, zvážiť forget\n")
         else:
             f.write("- žiadne\n")
-        f.write("\n---\n*Vedúcko, nič deštruktívne som sám nespravil. Čakám na tvoj audit.*\n")
+        # P2 dedup audit: čo opus v noci zlúčil (recovery v state/dedup_trash.jsonl)
+        merges = merges or []
+        f.write(f"\n## Dedup (opus zlúčil duplikáty — {len(merges)}; recovery v dedup_trash.jsonl)\n")
+        if merges:
+            for m in merges:
+                f.write(f"- zmazané id={m.get('removed')} -> nechané id={m.get('kept')}: "
+                        f"{m.get('removed_text', '')} ({m.get('reason', '')})\n")
+        else:
+            f.write("- žiadne duplikáty\n")
+        f.write("\n---\n*Vedúcko, jediné čo som sám zmazal sú dedup-duplikáty vyššie "
+                "(recovery v dedup_trash.jsonl). Forget-návrhy čakajú na tvoj audit.*\n")
     return path
 
 
@@ -231,9 +243,18 @@ def dream():
         nid = remember_l1(d["text"])
         d["id"] = nid  # dopln realne id do briefu
     ascended = ascend_higher(model=DREAM_MODEL)  # F8: dvihni L1->L2->L3
-    brief = write_brief(decay_res, episodes, distilled_l1, ascended=ascended)
+    # P2 SEMANTICKY DEDUP (cesta A): opus najde parafrazove duplikaty, auto-merge
+    # so zachrannou stopou (state/dedup_trash.jsonl). Beh PO consolidate/ascend,
+    # nech dedupuje aj cerstvo vzniknute L1/L2 koncepty.
+    merges = []
+    try:
+        from dedup_dream import dedup
+        merges = dedup(model=DREAM_MODEL, dry_run=False, log_fn=log)
+    except Exception as e:
+        log(f"dedup faza zlyhala (fail-open, pamat nedotknuta): {e!r}")
+    brief = write_brief(decay_res, episodes, distilled_l1, ascended=ascended, merges=merges)
     log(f"sen OK | epizod={len(episodes)} | nove_L1={len(distilled_l1)} | "
-        f"vyssie={len(ascended)} | brief={os.path.basename(brief)}")
+        f"vyssie={len(ascended)} | dedup_merge={len(merges)} | brief={os.path.basename(brief)}")
     return 0
 
 
