@@ -226,6 +226,30 @@ partial exists it is called out. Do not treat this section as a feature list.
 > `zol_session.py`. Cross-domain grouping quality is now handled by the LLM-assisted
 > clustering above rather than raw embedding distance.
 
+2. **Generative abstraction engine (design, verified against literature).** The core
+   idea Zolander is built around: it is not a memory store, it is an *abstraction
+   machine* — it extracts the abstract from the concrete (and back), and hands you the
+   view from one floor up. The split that makes this work: **geometry is the compass,
+   the LLM is the cartographer.** A Fréchet mean over a cluster of concrete memories on
+   the Lorentz hyperboloid yields a *candidate ancestor* (a point at smaller radius);
+   the LLM then *names the principle* that candidate stands for. Neither half suffices
+   alone — a pure embedder gives clusters without meaning, a pure LLM gives insight
+   without knowing which specifics to join. The plan upgrades `ascend.py` from a
+   one-shot distill into a **generative loop** where the geometric signal *steers* LLM
+   generation (the HyperGuide 2026 pattern: "distance-to-origin encodes solution
+   proximity, angular separation distinguishes branches"). Radius `r` is read directly
+   from the existing Lorentz space (no second space — the floors are radial shells of
+   the one we already have). The morning "thought about you" is one run of this loop:
+   the model climbed a floor and said what it saw.
+   *Honesty:* three parts are **design bets, not proven facts** — that norm encodes
+   abstraction *for free* (the seminal papers also tune it with an explicit penalty),
+   that *one* space suffices (2025 SOTA like HyperbolicRAG deliberately fuses two), and
+   the choice of dimensionality (hyperbolic geometry shines in *low* dimensions). So
+   this ships as a **spike first**: take 20-50 real memories, run the Fréchet-mean →
+   LLM-name step, and judge whether the "insight" actually lands before building the
+   full loop. Grounded in Nickel & Kiela (2017, 2018), Ganea et al. (2018), HyperGuide
+   (2026), HyperbolicRAG (2025), all read firsthand.
+
 ## The hard rule (this one IS enforced today)
 
 **The smarter friend, not the flatterer.** Encoded in the identity skill as a
