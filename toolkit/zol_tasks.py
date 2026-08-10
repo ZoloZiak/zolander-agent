@@ -21,6 +21,7 @@ Príkazy (stdlib only, /usr/bin/python3, fail-open, atomický zápis):
 """
 import os
 import sys
+import re
 import json
 import tempfile
 import datetime
@@ -108,9 +109,35 @@ def upsert(obj):
     return t
 
 
-def step(tid, text):
-    """Pridaj hotový krok — IDEMPOTENTNE (ak už je, nič). Checkpoint pre resume."""
+# PRIMA §XII poisoned-output guard: pri resume/checkpointe NEoznač otrávený výstup za
+# hotový. Otrávený = prázdny, error-shape (traceback/rate-limit/timeout), alebo podozrivo
+# krátky na deklarovaný typ. Bez toho by 429-skrátený alebo spadnutý krok prešiel ako
+# "converged" a resume by ho preskočil (PRIMA _load_completed_steps).
+_ERROR_SHAPES = re.compile(
+    r"\b(traceback|rate.?limit|429|timeout|timed out|connection (reset|refused)|"
+    r"exception|OOM|killed|SIGTERM|INTEGRITY FAIL|NOT_FOUND|null|undefined)\b",
+    re.IGNORECASE)
+
+
+def _looks_poisoned(result, min_len=20):
+    """True = výstup je otrávený/neúplný, NEsmie sa checkpointovať ako hotový."""
+    r = (result or "").strip()
+    if not r:
+        return True
+    if len(r) < min_len:            # podozrivo krátke na reálny výstup
+        return True
+    if _ERROR_SHAPES.search(r):     # nesie stopu zlyhania
+        return True
+    return False
+
+
+def step(tid, text, result=None, min_len=20):
+    """Pridaj hotový krok — IDEMPOTENTNE (ak už je, nič). Checkpoint pre resume.
+    Ak je daný `result`, VALIDUJ ho (poisoned-output guard): otrávený/neúplný výstup
+    krok NEoznačí za hotový — vráti {rejected: dôvod}, aby resume vedel pokračovať."""
     text = (text or "").strip()
+    if result is not None and _looks_poisoned(result, min_len):
+        return {"rejected": "poisoned_output", "task_id": tid, "step": text}
     with _locked():
         d = _load()
         t = d["tasks"].get(tid)
@@ -170,7 +197,9 @@ def main():
             obj = json.loads(sys.stdin.read() or "{}")
             print(json.dumps(upsert(obj), ensure_ascii=False, indent=1))
         elif cmd == "step":
-            print(json.dumps(step(sys.argv[2], sys.argv[3]), ensure_ascii=False, indent=1))
+            # step <id> <text> [result]  — ak je result daný, poisoned-output guard ho overí
+            result = sys.argv[4] if len(sys.argv) > 4 else None
+            print(json.dumps(step(sys.argv[2], sys.argv[3], result), ensure_ascii=False, indent=1))
         elif cmd == "has-step":
             return 0 if has_step(sys.argv[2], sys.argv[3]) else 1
         elif cmd == "done":
