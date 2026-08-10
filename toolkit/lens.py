@@ -173,6 +173,8 @@ def _dist(a, b):
     val = -mink
     if val < 1.0:
         val = 1.0
+    elif val > 1e6:
+        val = 1e6  # fp guard (red-team #3): clip proti strate presnosti acosh pri obrom r
     return math.acosh(val)
 
 
