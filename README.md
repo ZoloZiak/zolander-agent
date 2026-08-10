@@ -74,13 +74,14 @@ real execution. Run them all with `python3 toolkit/run_tests.py` (offline subset
 - **Cross-model identity.** An Ed25519 keypair (`toolkit/gen_identity.py`) + a
   SHA-256 integrity manifest (`toolkit/integrity.py`) anchor "who Zolander is"
   independent of which model backs the session.
-- **Native hyperbolic memory.** Four Lorentz-129D collections —
-  `zol_semantic / zol_episodic / zol_procedural / zol_identity` — written and read
-  through `toolkit/zol_mem.py`. Embeddings come from a **native hyperbolic embedder
-  (YAR v5)** via `toolkit/embed_yar.py`; vectors are re-projected onto the unit
-  hyperboloid so `⟨x,x⟩_L = -1` holds exactly. `recall` searches across all four
-  collections and ranks by Lorentz distance. Layers (L0–L3), salience and confidence
-  live in metadata.
+- **Native hyperbolic memory.** One Lorentz-129D collection, `zol_mem`, written and
+  read through `toolkit/zol_mem.py`. The kind of memory (`semantic / episodic /
+  procedural / identity`) lives in a `memory_type` metadata field rather than in four
+  separate collections — a benchmark found one collection matches four on quality while
+  four run 2.6–3.6x slower. Embeddings come from a **native hyperbolic embedder (YAR
+  v5)** via `toolkit/embed_yar.py`; vectors are re-projected onto the unit hyperboloid
+  so `⟨x,x⟩_L = -1` holds exactly. `recall` ranks by Lorentz distance across the whole
+  collection. Layers (L0–L3), salience and confidence live in metadata.
 - **Mechanical anti-hallucination / anti-sycophancy gate.** `toolkit/zol_guard.py` is
   a deterministic, LLM-free gate (exit 0 = clean, 1 = finding) — **not** prose in a
   skill. It is deliberately standalone (usable from any runtime, and from the hooks
@@ -268,11 +269,15 @@ invitation, not a verdict.
 ```
 Identity   skills/zolander/SKILL.md + Ed25519 key (toolkit/gen_identity.py)
            + SHA-256 integrity manifest (toolkit/integrity.py)
-Memory     Four Lorentz-129D collections: zol_semantic / zol_episodic /
-           zol_procedural / zol_identity (toolkit/zol_mem.py).
-           Native hyperbolic embeddings via YAR v5 (toolkit/embed_yar.py),
-           re-projected so <x,x>_L = -1. Layers L0-L3 + salience/confidence
-           in metadata. recall spans all four collections.
+Setup      bootstrap.sh — one-shot install (Hermes + HyperspaceDB + toolkit +
+           identity + daemons). configure_palantir.py wires a Foundry proxy
+           (optional, config-level). fetch_skills.sh pulls skills from their
+           own sources. No secrets or forks in the repo.
+Memory     One Lorentz-129D collection zol_mem (toolkit/zol_mem.py); the kind
+           (semantic / episodic / procedural / identity) lives in the
+           memory_type metadata field, not in separate collections. Native
+           hyperbolic embeddings via YAR v5 (toolkit/embed_yar.py), re-projected
+           so <x,x>_L = -1. Layers L0-L3 + salience/confidence in metadata.
 Guard      zol_guard.py — deterministic anti-hallucination / anti-sycophancy
            gate (scan-text / scan-input / verify-*). LLM-free, exit 0/1.
 Session    zol_session.py — start (recall-first) + koniec (guard + decay)
@@ -300,10 +305,35 @@ Hooks      hook_recall.py (pre_llm_call: inject recall once/session, cache-safe)
 
 ## Quick start
 
-Prereqs: [Hermes Agent](https://hermes-agent.nousresearch.com), a running HyperspaceDB
-(e.g. OrbStack/Docker), Node with the HyperspaceDB SDK, Python with `cryptography`,
-and a **native hyperbolic embedder** (the reference uses YAR v5 via `embed_yar.py`;
-plug in your own if you like — the collections are Lorentz-129D).
+The fast path is one script. `bootstrap.sh` installs Hermes, starts HyperspaceDB,
+clones this toolkit, generates your own identity key, records the integrity manifest,
+creates the memory collection, and loads the launchd daemons. It is idempotent, so
+re-running it is safe.
+
+```
+bash bootstrap.sh
+```
+
+It wires no LLM provider on purpose — you pick your own afterwards with `hermes model`.
+Two optional add-ons:
+
+```
+ZOLANDER_PALANTIR=1 bash bootstrap.sh   # also wire a Palantir Foundry proxy (prompts host+token)
+bash toolkit/fetch_skills.sh            # pull the skills from their own sources (no forks)
+```
+
+Palantir support is config-level (custom providers via `hermes config set`), not source
+patches, so it survives `hermes update`. Your token stays in `~/.hermes/.env`, never in
+this repo.
+
+Prereqs the script expects to already exist: [Hermes Agent](https://hermes-agent.nousresearch.com),
+Docker (for HyperspaceDB), Node with the HyperspaceDB SDK, Python with `cryptography`,
+and a **native hyperbolic embedder** (the reference uses YAR v5 via `embed_yar.py`; plug
+in your own — the collection is Lorentz-129D).
+
+### By hand
+
+If you would rather run the steps yourself:
 
 ```
 # 1. Generate your identity key (idempotent — never overwrites an existing key)
@@ -314,9 +344,9 @@ python3 toolkit/gen_identity.py
 python3 toolkit/integrity.py write
 python3 toolkit/integrity.py check
 
-# 3. Create the four memory collections (all Lorentz-129D)
+# 3. Create the memory collection (Lorentz-129D)
 export NODE_PATH=/path/to/node_modules
-python toolkit/zol_mem.py init      # creates the four collections idempotently
+python toolkit/zol_mem.py init      # idempotent
 
 # 4. Remember / recall / decay
 echo '{"text":"...","kind":"identity","layer":"L2","confidence":1.0}' | python toolkit/zol_mem.py remember
