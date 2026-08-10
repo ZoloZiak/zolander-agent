@@ -85,7 +85,10 @@ def evaluate(zadanie, odpoved, generator):
     prompt = f"ZADANIE:\n{zadanie}\n\nODPOVEĎ:\n{odpoved}"
     for j in judges:
         try:
-            raw = chat(prompt, model=j, system=EVAL_SYSTEM, max_tokens=EVAL_MAX_TOKENS)
+            # gemini je reasoning model — spotrebuje tokeny na "thinking" PRED JSON,
+            # takže s malým limitom sa JSON useknle (spike/live bug). Daj mu rezervu.
+            jt = EVAL_MAX_TOKENS + 16000 if j in ("gemini", "flash") else EVAL_MAX_TOKENS
+            raw = chat(prompt, model=j, system=EVAL_SYSTEM, max_tokens=jt)
             s = _parse_score(raw)
             if s and isinstance(s.get("celkom"), (int, float)):
                 per_judge[j] = s
