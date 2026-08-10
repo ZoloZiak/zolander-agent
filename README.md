@@ -280,6 +280,13 @@ Session    zol_session.py — start (recall-first) + koniec (guard + decay)
 Bridge     hs.mjs — thin Node CLI over the HyperspaceDB SDK.
 Loop       zolander_loop.py — one-shot launchd tick (~20 min): integrity
            (fail-closed) -> heartbeat -> git scan -> diary. No LLM.
+Notify     zolander_notify.py — one-way daemon->user channel: always appends to
+           an inbox on disk, best-effort push to a messaging platform if one is
+           wired. zol_brief.py (daily 8:00) sends a factual "alive" status pulled
+           from logs (loop/DB/integrity/dream); zol_watchdog.py (hourly) is an
+           infra tripwire — silent when healthy, one message when loop stalls /
+           DB is down / integrity mismatches, deduped so it never spams. Both
+           stdlib-only, fail-open. Plist templates carry __USER__ placeholders.
 Dream      zolander_dream.py — nightly: decay -> distill L0->L1 -> ascend.py
            climbs L1->L2->L3 (toward r->0) -> read-only morning brief. Never
            deletes; forget candidates are only proposed.
