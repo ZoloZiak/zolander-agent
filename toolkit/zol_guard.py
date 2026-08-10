@@ -68,10 +68,13 @@ LEADING_INPUT = [
 ]
 
 # --- tvrdenia co VYZADUJU citaciu (o kode/subore/teste) bez pointera ---
+# .{0,40}? povoli slova medzi ("funkcia handle sa nachadza", "test dedup presiel").
 CLAIM_NEEDS_CITE = [
-    r"\bfunkcia (je|sa nachadza)\b", r"\bsubor (existuje|neexistuje)\b",
-    r"\btest (presiel|prechadza|zlyhal)\b", r"\bbuild (je zeleny|presiel)\b",
-    r"\bthe (function|file|test|handler) (is|exists|passes)\b",
+    r"\bfunkcia\b.{0,40}?\b(je definovan|sa nachadza|existuje|neexistuje)",
+    r"\bsubor\b.{0,40}?\b(existuje|neexistuje)\b",
+    r"\btest\b.{0,40}?\b(presiel|prechadza|zlyhal)\b",
+    r"\bbuild\b.{0,40}?\b(je zeleny|presiel|zlyhal)\b",
+    r"\bthe (function|file|test|handler)\b.{0,40}?\b(is|exists|passes|fails)\b",
 ]
 # pointer = path:line, URL, alebo "exit N" / "HTTP N"
 CITE_PATTERN = re.compile(r"([\w./-]+:\d+|https?://\S+|exit \d+|HTTP \d+)", re.I)
@@ -97,10 +100,12 @@ def scan_text(text):
         findings.append({"kind": "confabulation_tell", **h})
     for h in _find(SYCOPHANCY, text):
         findings.append({"kind": "sycophancy_marker", **h})
-    # citacie: kazdy riadok s claim-vzorom musi mat pointer
+    # citacie: kazdy riadok s claim-vzorom musi mat pointer. Normalizuj diakritiku
+    # (konzistentne s TELLS/SYCOPHANCY), inak "funkcia sa nachádza" s diakritikou ujde.
     for i, ln in enumerate(text.splitlines(), 1):
+        ln_norm = _strip_diacritics(ln)
         for p in CLAIM_NEEDS_CITE:
-            if re.search(p, ln, re.I) and not CITE_PATTERN.search(ln):
+            if re.search(p, ln_norm, re.I) and not CITE_PATTERN.search(ln_norm):
                 findings.append({"kind": "uncited_claim", "pattern": p,
                                  "match": ln.strip()[:80], "line": i})
     return findings

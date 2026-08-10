@@ -24,11 +24,35 @@ import sys
 import json
 import tempfile
 import datetime
+import fcntl
+import contextlib
 
 ROOT = os.path.expanduser("~/zolander")
 STATE = os.path.join(ROOT, "state")
 TASKS = os.path.join(STATE, "tasks.json")
+LOCK = os.path.join(STATE, ".tasks.lock")
 VALID_STATUS = ("running", "paused", "done", "failed")
+
+
+@contextlib.contextmanager
+def _locked():
+    """Cross-process exclusive lock okolo read-modify-write. Bez neho 2 procesy
+    (CLI + gateway) stratia updaty: A cita, B cita starsi stav, obaja zapisu,
+    posledny prepise prveho (lost update — namerane 7/12 pri 12 subehoch).
+    fcntl.flock serializuje cely cyklus. Fail-open: ak lock zlyha, bezime bez neho."""
+    os.makedirs(STATE, exist_ok=True)
+    f = None
+    try:
+        f = open(LOCK, "w")
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        if f is not None:
+            try:
+                fcntl.flock(f, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            f.close()
 
 
 def _now():
@@ -67,34 +91,36 @@ def upsert(obj):
     tid = str(obj.get("task_id") or "").strip()
     if not tid:
         raise ValueError("task_id required")
-    d = _load()
-    t = d["tasks"].get(tid, {"steps_done": [], "created": _now()})
-    for k in ("title", "window", "status", "progress", "next"):
-        if k in obj and obj[k] is not None:
-            t[k] = obj[k]
-    if "refs" in obj and isinstance(obj["refs"], list):
-        t["refs"] = obj["refs"]
-    if t.get("status") not in VALID_STATUS:
-        t["status"] = "running"
-    t.setdefault("steps_done", [])
-    t["updated"] = _now()
-    d["tasks"][tid] = t
-    _save(d)
+    with _locked():
+        d = _load()
+        t = d["tasks"].get(tid, {"steps_done": [], "created": _now()})
+        for k in ("title", "window", "status", "progress", "next"):
+            if k in obj and obj[k] is not None:
+                t[k] = obj[k]
+        if "refs" in obj and isinstance(obj["refs"], list):
+            t["refs"] = obj["refs"]
+        if t.get("status") not in VALID_STATUS:
+            t["status"] = "running"
+        t.setdefault("steps_done", [])
+        t["updated"] = _now()
+        d["tasks"][tid] = t
+        _save(d)
     return t
 
 
 def step(tid, text):
     """Pridaj hotový krok — IDEMPOTENTNE (ak už je, nič). Checkpoint pre resume."""
     text = (text or "").strip()
-    d = _load()
-    t = d["tasks"].get(tid)
-    if t is None:
-        raise KeyError(f"neznama uloha: {tid}")
-    t.setdefault("steps_done", [])
-    if text and text not in t["steps_done"]:
-        t["steps_done"].append(text)
-        t["updated"] = _now()
-        _save(d)
+    with _locked():
+        d = _load()
+        t = d["tasks"].get(tid)
+        if t is None:
+            raise KeyError(f"neznama uloha: {tid}")
+        t.setdefault("steps_done", [])
+        if text and text not in t["steps_done"]:
+            t["steps_done"].append(text)
+            t["updated"] = _now()
+            _save(d)
     return t
 
 
