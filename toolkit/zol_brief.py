@@ -89,24 +89,62 @@ def integrity_ok():
         return None  # neznamy stav
 
 
+def _section_bullets(all_lines, header_substr):
+    """Vytiahne '- ...' odrazky pod nadpisom '## ...' co obsahuje header_substr.
+    Konci pri dalsom '## ' nadpise alebo '---'."""
+    out = []
+    grabbing = False
+    for line in all_lines:
+        s = line.rstrip("\n")
+        st = s.strip()
+        if st.startswith("## "):
+            grabbing = header_substr.lower() in st.lower()
+            continue
+        if not grabbing:
+            continue
+        if st.startswith("---"):
+            break
+        if st.startswith("- "):
+            out.append(st[2:].strip())
+    return out
+
+
 def dream_summary():
-    """Prva sekcia dnesneho ranneho briefu (dream vysledok), ak existuje."""
+    """Obsah dnesneho dream cyklu: nove abstrakty (rebrik) + dedup-merge + pocet
+    forget-navrhov. Vracia zoznam riadkov (uz s '- ' prefixom pre WhatsApp), alebo
+    None ak denny brief neexistuje. Cita REALNY obsah z denniky/brief_<dnes>.md."""
     fname = os.path.join(DENNIKY, f"brief_{now():%Y-%m-%d}.md")
     if not os.path.exists(fname):
         return None
     try:
-        lines = []
         with open(fname, encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if not s or s.startswith("#") or s.startswith("*") or s.startswith("---"):
-                    continue
-                lines.append(s)
-                if len(lines) >= 3:
-                    break
-        return " ".join(lines) if lines else None
+            all_lines = f.readlines()
     except Exception:
         return None
+
+    out = []
+
+    # nove abstrakty (rebrik / F8)
+    absts = _section_bullets(all_lines, "rebr")
+    absts = [a for a in absts if "nič" not in a.lower() and "nic" not in a.lower()]
+    for a in absts:
+        out.append(f"- sen/abstrakt: {a}")
+
+    # dedup-merge (obsah, nie len pocet)
+    merges = _section_bullets(all_lines, "Dedup")
+    if merges:
+        out.append(f"- sen/dedup: zlucenych {len(merges)} duplikatov:")
+        for m in merges:
+            short = m if len(m) <= 100 else m[:97] + "..."
+            out.append(f"   • {short}")
+
+    # forget-navrhy: len pocet (nezaplav mobil zoznamom idciek)
+    forgets = _section_bullets(all_lines, "zabudnut")
+    if forgets:
+        out.append(f"- sen/forget: {len(forgets)} navrhov na zabudnutie caka na tvoj audit "
+                   f"(detail v denniky/brief_{now():%Y-%m-%d}.md)")
+
+    return out if out else None
 
 
 def build_message():
@@ -141,16 +179,24 @@ def build_message():
 
     # dream
     d = dream_summary()
-    parts.append(f"- sen: {d}" if d else "- sen: bez novej konsolidacie")
+    if d:
+        parts.extend(d)
+    else:
+        parts.append("- sen: bez novej konsolidacie")
 
     return "\n".join(parts)
 
 
 def main():
     msg = build_message()
+    report = os.path.join(DENNIKY, f"brief_{now():%Y-%m-%d}.md")
+    cmd = [PYBIN, NOTIFY, "--subject", "ranny brief"]
+    if os.path.exists(report):
+        cmd += ["--report", report]
+    # ranny brief: bez zvuku (nema budit) — desktop banner ticho
+    cmd += [msg]
     try:
-        subprocess.run([PYBIN, NOTIFY, "--subject", "ranny brief", msg],
-                       timeout=90, cwd=ROOT)
+        subprocess.run(cmd, timeout=90, cwd=ROOT)
     except Exception:
         # fail-open: aspon vypis, launchd to da do log suboru
         print(msg)
