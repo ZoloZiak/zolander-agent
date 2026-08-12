@@ -3,8 +3,12 @@
 Rezimy:
   write  -> spocita SHA-256 chranenych suborov, zapise identity/integrity.sha256
   check  -> porovna aktualne hashe s manifestom, exit 0 OK / exit 1 MISMATCH
-Chranene: SKILL.md (Hermes skill), pubkey, fingerprint. Private kluc sa NEhashuje
-do manifestu (meni sa chmod/pristupy netreba), ale kontroluje sa jeho existencia.
+Chranene: LEN kryptograficka identita — pubkey + fingerprint. SKILL.md sa UZ
+NEchranI: vlastni ho Hermes a sam si ho prepisuje (normalizacia frontmatteru,
+curator, `hermes update`), takze hash chranI subor ktory legitimne meni niekto
+iny -> vecne false-faily bez realnej ochrany (utocnik co prepise skill prepise aj
+manifest). Identitu drzi Ed25519 kluc, nie hash markdownu. Private kluc sa
+NEhashuje (meni sa chmod/pristupy), ale kontroluje sa jeho existencia.
 """
 import os
 import sys
@@ -12,7 +16,6 @@ import hashlib
 
 HOME = os.path.expanduser("~")
 FILES = {
-    "skill": os.path.join(HOME, ".hermes/skills/note-taking/zolander/SKILL.md"),
     "pub": os.path.join(HOME, "zolander/identity/zolander_ed25519.pub"),
     "fingerprint": os.path.join(HOME, "zolander/identity/fingerprint.txt"),
 }
