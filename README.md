@@ -204,6 +204,43 @@ hooks:
       timeout: 30
 ```
 
+### Desktop notifications — being told away from the terminal
+
+The daemons (brief, watchdog, initiative) write to disk and best-effort push to a
+messaging app, but a passive push means you only learn of it when you next open the
+app. `zol_desktop_notify.py` adds a **native macOS banner** (via `terminal-notifier`,
+a user-level `brew` bottle) whose click **opens an HTML report in the browser** —
+`-open file://…`. It renders the daily `.md` brief to a dark-theme HTML page with a
+stdlib `md->html` (no dependency) and fires the banner; sound cadence is by urgency
+(brief silent, watchdog audible). One gotcha, learned the hard way: `terminal-notifier`
+reads a `-message` value starting with `-` as a flag and **drops the whole message**
+(`Message=(null)`) — and nearly every brief line starts with `- `. `_guard_dash()`
+prefixes a zero-width space (invisible in the banner) to defuse it. Verify a message
+actually arrived with `terminal-notifier -list <group>`, not just a clean exit code.
+
+It is wired one place — `zolander_notify.py` calls it, so **every** notification
+(brief/watchdog/initiative) gets a banner for free, no per-daemon edits. Two shell
+hooks extend the same banner to the *interactive* CLI (both observer-only — empty
+stdout, no flow change):
+
+```yaml
+hooks:
+  pre_tool_call:
+    - command: /usr/bin/python3 /path/to/toolkit/hook_clarify_notify.py
+      matcher: clarify          # banner when the agent asks YOU a question
+      timeout: 20
+  pre_verify:
+    - command: /usr/bin/python3 /path/to/toolkit/hook_done_notify.py
+      timeout: 20               # banner when a file-editing turn finishes
+```
+
+`hook_done_notify.py` fires only on the first finish attempt of a file-editing turn
+(`extra.coding` and `extra.attempt == 0`) so a `pre_verify` nudge loop doesn't banner
+you repeatedly. All of it is **fail-open**: no `terminal-notifier` installed → the
+banner is silently skipped and inbox + push still work. Enable the banner with a
+one-liner: `brew install terminal-notifier` (the first fire only shows the macOS
+permission prompt and swallows the banner — the second works).
+
 > Honesty caveat: hooks are user-level config, not part of Hermes core, so a Hermes
 > update won't delete them — but if the hook API changes, re-verify the event names and
 > the `{"context": ...}` / `{"action": "continue"}` contracts. `hermes hooks doctor`
@@ -333,11 +370,20 @@ Loop       zolander_loop.py — one-shot launchd tick (~20 min): integrity
            (fail-closed) -> heartbeat -> git scan -> diary. No LLM.
 Notify     zolander_notify.py — one-way daemon->user channel: always appends to
            an inbox on disk, best-effort push to a messaging platform if one is
-           wired. zol_brief.py (daily 8:00) sends a factual "alive" status pulled
-           from logs (loop/DB/integrity/dream); zol_watchdog.py (hourly) is an
+           wired, AND a native macOS banner (terminal-notifier, optional) whose
+           click opens an HTML report in the browser. zol_desktop_notify.py
+           renders the daily .md brief to a dark-theme HTML (stdlib md->html, no
+           deps) under state/reports/ and fires the clickable banner; a
+           _guard_dash() prefixes a zero-width space so a message starting with
+           '-' isn't eaten as a flag. zol_brief.py (daily 8:00) sends a factual
+           "alive" status pulled from logs (loop/DB/integrity/dream) plus the
+           dream cycle's actual content (new abstract + dedup merges + forget
+           count), silent, clickable report; zol_watchdog.py (hourly) is an
            infra tripwire — silent when healthy, one message when loop stalls /
-           DB is down / integrity mismatches, deduped so it never spams. Both
-           stdlib-only, fail-open. Plist templates carry __USER__ placeholders.
+           DB is down / integrity mismatches, deduped so it never spams, with an
+           audible sound. All stdlib-only, fail-open (a missing terminal-notifier
+           just falls back to inbox + push). Plist templates carry __USER__
+           placeholders.
 Dream      zolander_dream.py — nightly: decay -> distill L0->L1 -> ascend.py
            climbs L1->L2->L3 (toward r->0) -> read-only morning brief. Never
            deletes; forget candidates are only proposed.
@@ -346,7 +392,12 @@ Engine     ascend.py (abstraction ladder), patterns.py (script detector),
            + native Lorentz distance. Quality bounded by embedder (roadmap #1).
 Hooks      hook_recall.py (pre_llm_call: inject recall once/session, cache-safe)
            + hook_verify.py (pre_verify: deny "done" while changed .py/.json
-           don't parse, fail-open). Hard locks in code, not prompt convention.
+           don't parse, fail-open) + hook_clarify_notify.py (pre_tool_call
+           matcher:clarify: banner when the agent asks you a question) +
+           hook_done_notify.py (pre_verify: banner when a file-editing turn
+           finishes). The last two are observer-only (empty stdout = no flow
+           change), fire a desktop banner so you're told even away from the
+           terminal. Hard locks in code, not prompt convention.
 ```
 
 ## Quick start
@@ -375,7 +426,9 @@ this repo.
 Prereqs the script expects to already exist: [Hermes Agent](https://hermes-agent.nousresearch.com),
 Docker (for HyperspaceDB), Node with the HyperspaceDB SDK, Python with `cryptography`,
 and a **native hyperbolic embedder** (the reference uses YAR v5 via `embed_yar.py`; plug
-in your own — the collection is Lorentz-129D).
+in your own — the collection is Lorentz-129D). Optional: `terminal-notifier`
+(`brew install terminal-notifier`) for clickable native macOS banners — without it the
+notify layer falls back to inbox + messaging push.
 
 ### By hand
 
