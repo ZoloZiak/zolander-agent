@@ -30,6 +30,8 @@ STATE = os.path.join(ROOT, "state")
 LOGS = os.path.join(ROOT, "logs")
 INBOX = os.path.join(STATE, "inbox.md")
 NOTIFYLOG = os.path.join(LOGS, "notify.log")
+DESKTOP = os.path.join(ROOT, "toolkit", "zol_desktop_notify.py")
+PYBIN = "/usr/bin/python3"
 
 # platforma pre push (prepisatelne cez env ZOL_NOTIFY_TARGET). Prazdne = auto:
 # vezmi prvu dostupnu z `hermes send --list`.
@@ -127,16 +129,42 @@ def try_push(hermes, target, subject, body):
     return False
 
 
+def fire_desktop(subject, body, report, sound):
+    """Best-effort natívny macOS banner cez zol_desktop_notify.py. Fail-open —
+    ak vrstva chýba/zlyhá, notifikacia aj tak žije v inboxe + push."""
+    if not os.path.exists(DESKTOP):
+        return
+    cmd = [PYBIN, DESKTOP, "--title", "Zolander",
+           "--subtitle", subject or "sprava", "--message", body]
+    if report:
+        cmd += ["--report", report]
+    if sound:
+        cmd += ["--sound", sound]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except Exception as exc:
+        log(f"desktop banner zlyhal: {exc!r}")
+
+
 def main():
     args = sys.argv[1:]
     subject = ""
-    if "--subject" in args:
-        i = args.index("--subject")
-        try:
-            subject = args[i + 1]
-            del args[i:i + 2]
-        except IndexError:
-            pass
+    report = ""
+    sound = ""
+    for flag in ("--subject", "--report", "--sound"):
+        if flag in args:
+            i = args.index(flag)
+            try:
+                val = args[i + 1]
+                del args[i:i + 2]
+                if flag == "--subject":
+                    subject = val
+                elif flag == "--report":
+                    report = val
+                else:
+                    sound = val
+            except IndexError:
+                pass
     body = " ".join(args).strip()
     if not body:
         body = sys.stdin.read().strip()
@@ -147,7 +175,10 @@ def main():
     # 1) VZDY inbox
     write_inbox(subject, body)
 
-    # 2) skus push (best-effort)
+    # 2) natívny desktop banner (best-effort, klik otvori report ak je zadany)
+    fire_desktop(subject, body, report, sound)
+
+    # 3) skus push (best-effort)
     hermes = find_hermes()
     if not hermes:
         log("hermes CLI nenajdene -> len inbox")

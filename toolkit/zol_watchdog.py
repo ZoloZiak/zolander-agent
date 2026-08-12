@@ -82,7 +82,9 @@ def save_ledger(active):
 
 def notify(msg):
     try:
-        subprocess.run([PYBIN, NOTIFY, "--subject", "watchdog ALERT", msg],
+        # watchdog = nieco hori -> vyrazny zvuk (desktop banner cez zolander_notify)
+        subprocess.run([PYBIN, NOTIFY, "--subject", "watchdog ALERT",
+                        "--sound", "Sosumi", msg],
                        timeout=90, cwd=ROOT)
     except Exception:
         print(msg)
