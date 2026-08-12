@@ -38,20 +38,31 @@ def do_write():
         print(" ", l)
 
 
-def do_check():
+def _load_manifest():
     if not os.path.exists(PRIV):
         print("CHYBA: chyba privatny kluc", PRIV)
-        return 1
+        return None
     if not os.path.exists(MANIFEST):
         print("CHYBA: chyba manifest", MANIFEST)
-        return 1
-    ok = True
+        return None
     saved = {}
     for line in open(MANIFEST):
         parts = line.split()
         if len(parts) >= 2:
             saved[parts[1]] = parts[0]
+    return saved
+
+
+def do_check(only=None):
+    """Porovna hashe. `only` = mnozina nazvov na kontrolu (None = vsetky).
+    Vrati 0 ak vsetky kontrolovane sedia, inak 1."""
+    saved = _load_manifest()
+    if saved is None:
+        return 1
+    ok = True
     for name, path in FILES.items():
+        if only is not None and name not in only:
+            continue
         cur = sha(path)
         exp = saved.get(name)
         if exp != cur:
@@ -62,9 +73,18 @@ def do_check():
     return 0 if ok else 1
 
 
+# nazvy suborov ktore predstavuju SKUTOCNU kryptograficku identitu (nie skill).
+# mismatch na tychto = realny utok -> fail-closed. Skill vlastni Hermes a moze
+# ho sam prepisat (normalizacia frontmatteru, curator, `hermes update`).
+KEY_FILES = {"pub", "fingerprint"}
+
+
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "check"
     if mode == "write":
         do_write()
+    elif mode == "check-keys":
+        # kontroluje LEN kryptograficku identitu (pub + fingerprint)
+        sys.exit(do_check(only=KEY_FILES))
     else:
         sys.exit(do_check())

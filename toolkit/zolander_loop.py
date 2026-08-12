@@ -44,15 +44,55 @@ def log(msg):
 
 
 def check_integrity():
-    """True IBA ak integrity.py existuje a check prejde. FAIL-CLOSED:
-    ak skript chyba (zmazany/presunuty), povazuj za PORUSENIE (return False),
-    nie za OK. Absencia kontroly nesmie byt tichy priechod (audit §13)."""
+    """Variant B — rozlisuje SKUTOCNY utok od Hermes-vlastneho prepisu skillu.
+
+    Fail-closed IBA ked nesedia kryptograficke kluce (pub/fingerprint) alebo
+    chyba samotny integrity skript. Ked sedia kluce a nesedi LEN skill (Hermes
+    si SKILL.md sam prepisuje: normalizacia frontmatteru, curator, `hermes
+    update`), NEjde o utok -> loop sa SAM re-baselinuje, posle info a tika dalej.
+
+    Vrati (ok: bool, note: str|None). note != None -> stala sa auto-oprava.
+    """
     if not os.path.exists(INTEGRITY):
         log("INTEGRITY SKRIPT CHYBA (%s) — fail-closed, tick prerušený." % INTEGRITY)
-        return False
-    p = subprocess.run([sys.executable, INTEGRITY, "check"],
-                       capture_output=True, text=True)
-    return p.returncode == 0
+        return False, None
+
+    # 1. plny check — ak prejde, hotovo
+    full = subprocess.run([sys.executable, INTEGRITY, "check"],
+                          capture_output=True, text=True)
+    if full.returncode == 0:
+        return True, None
+
+    # 2. plny check zlyhal -> preveriť SKUTOCNU identitu (len kluce)
+    keys = subprocess.run([sys.executable, INTEGRITY, "check-keys"],
+                          capture_output=True, text=True)
+    if keys.returncode != 0:
+        # kluce/fingerprint nesedia = realny utok na identitu -> FAIL-CLOSED
+        log("INTEGRITY FAIL — KLUCE/FINGERPRINT nesedia (mozny utok)! tick prerušený.")
+        return False, None
+
+    # 3. kluce OK, nesedi len skill -> Hermes-vlastny prepis, NIE utok.
+    #    sam re-baselinuj a pokracuj.
+    wr = subprocess.run([sys.executable, INTEGRITY, "write"],
+                        capture_output=True, text=True)
+    if wr.returncode != 0:
+        log("INTEGRITY: re-baseline skillu ZLYHAL (%s) — tick prerušený." % wr.stderr.strip())
+        return False, None
+    note = "SKILL.md sa zmenil (Hermes-vlastny prepis, kluce OK) — auto re-baseline, loop pokracuje."
+    log("INTEGRITY: " + note)
+    return True, note
+
+
+def notify(msg):
+    """Best-effort info cez zolander_notify.py (fail-open)."""
+    notify_py = os.path.join(ROOT, "toolkit", "zolander_notify.py")
+    if not os.path.exists(notify_py):
+        return
+    try:
+        subprocess.run(["/usr/bin/python3", notify_py, msg],
+                       capture_output=True, text=True, timeout=70)
+    except Exception as e:
+        log(f"notify zlyhal: {e!r}")
 
 
 def write_heartbeat():
@@ -99,7 +139,8 @@ def write_diary(findings):
 
 
 def tick():
-    if not check_integrity():
+    ok, note = check_integrity()
+    if not ok:
         log("INTEGRITY FAIL — identita zmenena! tick prerušený.")
         return 1
     write_heartbeat()
@@ -107,6 +148,8 @@ def tick():
     write_diary(findings)
     total = sum(len(d) for _, d in findings)
     log(f"tick OK | projekty so zmenami={len(findings)} | zmien spolu={total}")
+    if note:
+        notify("🔧 Zolander loop: " + note)
     return 0
 
 
