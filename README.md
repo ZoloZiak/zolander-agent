@@ -250,6 +250,28 @@ partial exists it is called out. Do not treat this section as a feature list.
    full loop. Grounded in Nickel & Kiela (2017, 2018), Ganea et al. (2018), HyperGuide
    (2026), HyperbolicRAG (2025), all read firsthand.
 
+3. **Embodiment on a personal machine — shared-browser "hands" (idea, deliberately gated).**
+   Today Zolander's hands are the terminal, memory, and HTTP clients (a small Rust
+   TLS-impersonating client covers most web reads without a full browser). What it does
+   *not* have is a browser it can drive *alongside you* — the "agent works in the tab
+   next to yours" experience. A class of tools now does exactly this: a shared browser
+   where a human and an AI operate in parallel, the agent reaching your real logged-in
+   session in its own space without fighting you for tabs (e.g. `citrolabs/ego-lite`, a
+   native zero-config app with per-agent "Spaces"; `Tencent/BrowserSkill`, CLI+extension
+   framed as "use your real browser without interrupting your work"; and heavier drivers
+   like `OpenCLI` or `nanobrowser`). If Zolander ever runs somewhere *other than a
+   locked-down, DLP-monitored corporate machine*, this becomes a natural feature: give it
+   a visible, collaborative browser instead of only headless reads.
+   *Honesty / why it is gated, not shipped:* every tool in this class works by handing the
+   agent your **real browser session — cookies, logins, everything**. On the reference
+   machine (corporate, DLP + XDR + MDM) that is exactly the data-exfiltration shape the
+   endpoint tooling is built to catch, and it would expose *corporate* credentials, not
+   just personal ones — so it is **explicitly out of scope there** and must never be
+   installed to "sneak past" monitoring. This item is therefore conditional on the host:
+   personal machine → viable and genuinely useful; monitored corporate host → do not.
+   No code for it lives in this repo yet; when added it belongs behind an opt-in flag with
+   the same "user's machine, user's call" posture as the other optional integrations.
+
 ## The hard rule (this one IS enforced today)
 
 **The smarter friend, not the flatterer.** Encoded in the identity skill as a
