@@ -26,6 +26,8 @@ LENS = os.path.join(HERE, "lens.py")
 PATTERNS = os.path.join(HERE, "patterns.py")
 PLAN = "/Users/__USER__/zolander/PLAN.md"
 SYS_PY = "/usr/bin/python3"
+INBOX = "/Users/__USER__/zolander/state/inbox.md"
+BATCH_STATE = "/Users/__USER__/zolo2.0/work/masterplan/_batch_state.json"
 
 DEFAULT_START_QUERY = "aktualny stav Zolander a otvorene ulohy co treba dokoncit"
 
@@ -43,11 +45,61 @@ def plan_tail(n=40):
     return "\n".join(lines[-n:])
 
 
+def inbox_tail(n=8):
+    """Poslednych n zaznamov z inbox.md — co Zolander stihol kym si bol prec.
+    Fail-open: chybajuci subor => prazdny retazec (ziadne privitanie)."""
+    if not os.path.exists(INBOX):
+        return ""
+    try:
+        lines = open(INBOX, encoding="utf-8", errors="replace").read().splitlines()
+    except Exception:
+        return ""
+    # kazdy zaznam zacina "## " — vezmi poslednych n blokov
+    idxs = [i for i, l in enumerate(lines) if l.startswith("## ")]
+    if not idxs:
+        return ""
+    start = idxs[-n] if len(idxs) >= n else idxs[0]
+    return "\n".join(lines[start:]).strip()
+
+
+def batch_status():
+    """Jednoriadkovy stav book-batchu (zolo2.0). Fail-open => prazdny retazec."""
+    if not os.path.exists(BATCH_STATE):
+        return ""
+    try:
+        st = json.load(open(BATCH_STATE, encoding="utf-8"))
+    except Exception:
+        return ""
+    done = st.get("done", "?")
+    total = st.get("total", "?")
+    fin = st.get("finished")
+    cur = st.get("current")
+    upd = st.get("updated", "?")
+    if fin:
+        return f"book-batch: HOTOVO {done}/{total} (finished, {upd})"
+    if cur:
+        return f"book-batch: BEZI {done}/{total}, prave: {cur} ({upd})"
+    return f"book-batch: {done}/{total}, nedokoncene/stoji ({upd})"
+
+
 def cmd_start():
     query = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_START_QUERY
     print("=== ZOLANDER /start — recall-first ===\n")
 
-    # 1) recall cez vsetky kolekcie (zol_mem sam prehlada vsetky ked kind=None)
+    # 0) PRIVITANIE STAVOM PRACE — co sa dialo kym si bol prec (inbox + batch)
+    inbox = inbox_tail()
+    batch = batch_status()
+    if inbox or batch:
+        print("VITAJ SPAT — co sa dialo kym si bol prec:")
+        if batch:
+            print(f"  {batch}")
+        if inbox:
+            print("  Zolanderove odkazy (inbox):")
+            for ln in inbox.splitlines():
+                print(f"    {ln}")
+        print()
+
+    # 1) recall (jedna kolekcia zol_mem; kind=None => vsetky typy pamate)
     rc, out, err = _run([VPY, ZOL_MEM, "recall"],
                         stdin=json.dumps({"query": query, "topk": 6}))
     if rc == 0:
@@ -56,9 +108,10 @@ def cmd_start():
             print("PAMÄŤ (top spomienky k stavu):")
             for h in hits:
                 d = h.get("distance", 0)
-                txt = h.get("meta", {}).get("text", "")[:90]
-                col = h.get("col", "?").replace("zol_", "")
-                print(f"  [{col:10s} d={d:.3f}] {txt}")
+                m = h.get("meta", {})
+                txt = m.get("text", "")[:90]
+                mt = (m.get("memory_type") or m.get("kind") or "?")
+                print(f"  [{mt:10s} d={d:.3f}] {txt}")
         except Exception:
             print("recall raw:", out[:400])
     else:

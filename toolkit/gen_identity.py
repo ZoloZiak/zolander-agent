@@ -20,35 +20,18 @@ os.makedirs(BASE, exist_ok=True)
 
 if os.path.exists(KEY):
     print("EXISTUJE: kluc uz je, neprepisujem.", KEY)
-    _pw = os.environ.get("ZOLANDER_KEY_PASSPHRASE")
-    _pwb = _pw.encode("utf-8") if _pw else None
-    priv = serialization.load_pem_private_key(open(KEY, "rb").read(), password=_pwb)
+    priv = serialization.load_pem_private_key(open(KEY, "rb").read(), password=None)
 else:
     priv = Ed25519PrivateKey.generate()
-    # Kluc at-rest: ak je heslo v env ZOLANDER_KEY_PASSPHRASE, sifruj (PKCS8 +
-    # BestAvailableEncryption). Inak necheme robit bezpecnostne DIVADLO — heslo
-    # ulozene vedla kluca na disku by DLP/endpoint aj tak precital, nulovy zisk.
-    # Preto: bez env hesla -> kluc ostane nesifrovany, ALE nahlas varujeme.
-    _pw = os.environ.get("ZOLANDER_KEY_PASSPHRASE")
-    if _pw:
-        enc = serialization.BestAvailableEncryption(_pw.encode("utf-8"))
-    else:
-        enc = serialization.NoEncryption()
     pem = priv.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=enc,
+        encryption_algorithm=serialization.NoEncryption(),
     )
     with open(KEY, "wb") as f:
         f.write(pem)
     os.chmod(KEY, 0o600)
-    if _pw:
-        print("VYTVORENE (sifrovane heslom z ZOLANDER_KEY_PASSPHRASE):", KEY)
-    else:
-        print("VYTVORENE:", KEY)
-        print("!! VAROVANIE: privatny kluc je NESIFROVANY na disku (chmod 600).")
-        print("!! Pre sifrovanie at-rest nastav env ZOLANDER_KEY_PASSPHRASE a")
-        print("!! vygeneruj kluc nanovo. Heslo drz MIMO disku (nie vedla kluca).")
+    print("VYTVORENE:", KEY)
 
 pub = priv.public_key()
 pub_pem = pub.public_bytes(

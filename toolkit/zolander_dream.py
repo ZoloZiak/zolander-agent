@@ -188,12 +188,29 @@ def ascend_higher(model="gpt-mini"):
     return created
 
 
+def _index_text_map():
+    """Mapa id -> (text, kind) z mem_index.jsonl pre citatelny forget-navrh."""
+    m = {}
+    try:
+        with open(IDX, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                r = json.loads(line)
+                m[r.get("id")] = (r.get("text", ""), r.get("kind") or r.get("memory_type") or "?")
+    except Exception:
+        pass
+    return m
+
+
 def write_brief(decay_res, episodes, distilled_l1, ascended=None, merges=None):
     """distilled_l1 = list dictov {text, from_ids, id} novych L1 konceptov."""
     day = datetime.date.today().isoformat()
     path = os.path.join(DENNIKY, f"brief_{day}.md")
     os.makedirs(DENNIKY, exist_ok=True)
     forget = decay_res.get("forget", []) if isinstance(decay_res, dict) else []
+    txtmap = _index_text_map()
     with open(path, "w") as f:
         f.write(f"# Ranný brief — {day}\n\n")
         f.write(f"*Sen: {now()}*\n\n")
@@ -214,9 +231,12 @@ def write_brief(decay_res, episodes, distilled_l1, ascended=None, merges=None):
                 frm = ",".join(str(i) for i in c.get("from_ids", []))
                 f.write(f"- **{lyr}** (id={cid}, z {frm}): {c.get('text', '')}\n")
         f.write("\n## NÁVRHY na zabudnutie (rozhodni ty — nič som nezmazal)\n")
+        f.write("*Len staré epizódy s nízkou salienciou. Durable fakty "
+                "(identity/procedural/semantic) sa na forget nenavrhujú.*\n\n")
         if forget:
             for fid in forget:
-                f.write(f"- [ ] id={fid} — nízka salience, zvážiť forget\n")
+                txt, kind = txtmap.get(fid, ("(text nenájdený v indexe)", "?"))
+                f.write(f"- [ ] id={fid} [{kind}] — {txt}\n")
         else:
             f.write("- žiadne\n")
         # P2 dedup audit: čo opus v noci zlúčil (recovery v state/dedup_trash.jsonl)
