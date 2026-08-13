@@ -18,7 +18,7 @@ import sys
 import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TESTS_DIR = os.path.join(ROOT, "tests")
+TOOLKIT = os.path.join(ROOT, "toolkit")
 VPY = os.path.join(ROOT, ".venv-yar", "bin", "python")
 SYS = "/usr/bin/python3"
 
@@ -38,7 +38,7 @@ TESTS = [
 
 
 def run(interp, script):
-    p = subprocess.run([interp, os.path.join(TESTS_DIR, script)],
+    p = subprocess.run([interp, os.path.join(TOOLKIT, script)],
                        capture_output=True, text=True)
     return p.returncode, p.stdout, p.stderr
 

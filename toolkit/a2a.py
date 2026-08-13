@@ -54,18 +54,7 @@ INBOX = os.path.join(ROOT, "inbox", "inbox.jsonl")
 def _load_priv():
     if not os.path.exists(KEY):
         raise SystemExit("CHYBA: chyba privatny kluc. Spusti gen_identity.py najprv.")
-    # Ak bol kluc vygenerovany so sifrovanim (env ZOLANDER_KEY_PASSPHRASE pri
-    # gen_identity.py), to iste heslo musi byt v env aj teraz. Bez hesla ->
-    # cryptography vyhodi zrozumitelnu chybu, ktoru prebalime na jasnu hlasku.
-    _pw = os.environ.get("ZOLANDER_KEY_PASSPHRASE")
-    _pwb = _pw.encode("utf-8") if _pw else None
-    try:
-        return serialization.load_pem_private_key(open(KEY, "rb").read(), password=_pwb)
-    except (TypeError, ValueError) as e:
-        raise SystemExit(
-            "CHYBA: nepodarilo sa nacitat privatny kluc — je sifrovany? "
-            "Nastav env ZOLANDER_KEY_PASSPHRASE na spravne heslo. (%s)" % e
-        )
+    return serialization.load_pem_private_key(open(KEY, "rb").read(), password=None)
 
 
 def _raw_pub_hex(pub):
