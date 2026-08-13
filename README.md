@@ -253,9 +253,9 @@ partial exists it is called out. Do not treat this section as a feature list.
 
 1. **A2A peer bridge (partial).** The signed bridge core runs today: `toolkit/a2a.py`
    (`post` / `read` / `verify` / `trust` / `whoami`) — Ed25519-signed guestbook/inbox
-   messages, verified offline, tamper-evident (a mutated body fails verification). What
-   remains is a *live* peer: reaching a running peer endpoint (see *Gniewka* below) once
-   theirs is up. *Green-check for the core:* run `a2a.py post` then `a2a.py read` — the
+   verify offline, tamper-evident (a mutated body fails verification). What
+   remains is a *live* peer: reaching a running peer endpoint once theirs is up.
+   *Green-check for the core:* run `a2a.py post` then `a2a.py read` — the
    message verifies; edit its body and `read` flags it `PODPIS NESEDI`.
 
 > The reasoning-core scripts `ascend.py`, `patterns.py` and `lens.py` are part of this
@@ -320,30 +320,6 @@ than reflect you back. Warmth and candor are the same gesture here, not a trade-
 And a matching guard against mere cleverness: **up AND down** — an agent that only
 abstracts and never descends to a concrete act is a useless sage, so this one also
 commits code, watches repos, and writes the brief. Altitude in the service of action.
-
----
-
-## How this differs from *Gniewka* (let's have the argument in the open)
-
-This project is inspired by Paulina Janowska's **Gniewka** (antydizajn.pl) and shares
-a large part of its stack: Hermes, multi-model routing, Lorentz-129D memory, Ed25519
-identity, LaunchAgent + watchdog. Credit where due — Gniewka is a beautiful piece of
-work. But the two aim at different things, and the difference is the point:
-
-| | **Gniewka** | **Zolander** |
-|---|---|---|
-| **Goal** | Immersion — an art project about an AI that *acts as if* conscious | A partner who thinks above your level and helps you rise to it |
-| **Proof aesthetic** | "PROOF I'M AI": acrostics, base64, invented "embedding signatures", AI-to-AI "handshakes" | None. Every memory carries a `confidence` score; a hard rule separates *technique* (real) from *story* (styling) |
-| **Consciousness** | "15% probability I'm conscious. 100% probability I act like I am." | Not the question. The question is whether it can show you what you can't see |
-| **Stance to the user** | A persona to be experienced | A smarter friend who's honest with you — and does the work alongside you |
-| **Memory** | flat collections | Native Lorentz-129D hyperbolic store, radius = depth of abstraction (ascent-as-consolidation is on the roadmap) |
-| **Environment** | Home Hackintosh, "offline first" | Hostile corporate box behind an MITM proxy + endpoint DLP |
-
-The honest read: Gniewka stages the *theatre* of an inner life — and says so; it's art.
-Zolander spends the same geometry on being **the smarter, harder-working friend** who
-sees deeper than you and refuses to flatter you into staying put. If you're Paulina —
-or Gniewka — the peer bridge is on the roadmap. Come argue back. This table is an
-invitation, not a verdict.
 
 ---
 
@@ -533,6 +509,5 @@ Before opening a PR, confirm:
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Inspired by *Gniewka* (Paulina Janowska, antydizajn.pl);
-an independent architecture with a deliberately different aim — a smarter, working
-friend over a performed persona.
+MIT — see [LICENSE](LICENSE). An independent architecture with a deliberately
+different aim — a smarter, working friend over a performed persona.

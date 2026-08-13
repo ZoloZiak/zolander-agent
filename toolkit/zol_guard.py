@@ -2,10 +2,10 @@
 """zol_guard.py — MECHANICKA anti-halucinacia / anti-sycophancy brana.
 
 NIE je to text v skille — je to spustitelny gate (exit 0 = cisto, exit 1 = nalez).
-Deterministicky, BEZ LLM volani (lacne, overitelne, opakovatelne). Presne to na
-com Paulina trvala: "gdzie ladujesz skill antyhalucynacji? hooki nigdzie" — toto
-je ten hook: skript volany na definovanom mieste (/koniec konsolidacia, alebo
-manualne pred odoslanim risk. odpovede).
+Deterministicky, BEZ LLM volani (lacne, overitelne, opakovatelne). Anti-halucinacna
+brana patri do KODU ako spustitelny hook, nie do skillu ako prosa: skript volany
+na definovanom mieste (/koniec konsolidacia, alebo manualne pred odoslanim
+risk. odpovede).
 
 Rezimy:
   scan-text  <file>        # prehlada text na confabulation-tells + sycophancy markery
