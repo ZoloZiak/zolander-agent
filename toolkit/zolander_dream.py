@@ -18,7 +18,7 @@ import datetime
 import subprocess
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 DENNIKY = os.path.join(ROOT, "denniky")
 LOGS = os.path.join(ROOT, "logs")
@@ -34,7 +34,7 @@ EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 # nocny automat nema kontext-limit problem). Prepisatelne cez DREAM_MODEL.
 DREAM_MODEL = os.environ.get("DREAM_MODEL", "opus")
 
-sys.path.insert(0, os.path.join(HOME, "zolo2.0", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
 sys.path.insert(0, os.path.join(ROOT, "toolkit"))  # cluster_llm
 
 
@@ -188,6 +188,57 @@ def ascend_higher(model="gpt-mini"):
     return created
 
 
+def consolidate_graph(model=DREAM_MODEL, min_size=3, min_density=1.0):
+    """C — SEN NAD GRAFOM: konsoliduj husto prepojene 'related' komunity.
+
+    Kym ascend.py stupa po FIXNYCH vrstvach (L1->L2->L3), toto pracuje nad
+    ASOCIACNYM grafom, ktory pamat sama uplietla priebezne (B, related hrany).
+    Komunita related uzlov = vznikajuca TEMA napriec vrstvami. Z nej vydestiluj
+    1 abstrakt (L2 princip) a nalinkuj clenov parent hranou -> nadhlad je
+    navigovatelny a tema dostane "strechu".
+
+    POISTKA (abstraction-engine test, references): NEspusti LLM na riedkej skupine.
+    Berieme len komunity s density >= min_density (hran/uzol), ktore este NEMAJU
+    spolocny parent (nekonsoliduj to co uz strechu ma). Idempotencia: komunita
+    kde vsetci clenovia uz maju parent sa preskoci.
+    Vrati zoznam {id, layer, text, from_ids} novych abstraktov.
+    """
+    created = []
+    try:
+        import zol_graph
+        comms = zol_graph.communities(min_size=min_size, edge="related")
+    except Exception as e:
+        log(f"consolidate_graph: communities zlyhal (fail-open): {e!r}")
+        return created
+    rows = {r["id"]: r for r in load_index()}
+    for c in comms:
+        if c.get("density", 0) < min_density:
+            continue  # riedka skupina -> preskoc (poistka proti pseudo-principu)
+        members = c["members"]
+        # ak uz VSETCI clenovia maju parent, tema ma strechu -> preskoc (idempotencia)
+        if len(c.get("has_parent", [])) >= len(members):
+            continue
+        group = [{"id": m, "text": rows.get(m, {}).get("text", "")}
+                 for m in members if rows.get(m, {}).get("text")]
+        if len(group) < min_size:
+            continue
+        text = _distill_group(group, model)
+        if not text:
+            continue
+        nid = remember_l1(text)  # uklada ako L1 semantic; strecha nad temou
+        if not nid:
+            continue
+        # nalinkuj clenov -> novy abstrakt (parent), aby bola tema navigovatelna
+        try:
+            for m in members:
+                zol_graph.link(m, nid, "parent")
+        except Exception as e:
+            log(f"consolidate_graph: link {nid} zlyhal (fail-open): {e!r}")
+        created.append({"id": nid, "layer": "L1", "text": text, "from_ids": members})
+    log(f"consolidate_graph: komunit={len(comms)} novych_abstraktov={len(created)}")
+    return created
+
+
 def _index_text_map():
     """Mapa id -> (text, kind) z mem_index.jsonl pre citatelny forget-navrh."""
     m = {}
@@ -262,7 +313,28 @@ def dream():
     for d in distilled_l1:
         nid = remember_l1(d["text"])
         d["id"] = nid  # dopln realne id do briefu
+        # NADHLAD: nalinkuj zdrojove epizody -> novy L1 koncept (parent hrana),
+        # nech je aj denna konsolidacia navigovatelna cez zol_graph, nie len
+        # vyssie priecky v ascend.py. Fail-open: chyba grafu nezhodi sen.
+        if nid:
+            try:
+                import zol_graph
+                for i in d.get("from_ids", []):
+                    if i is not None:
+                        zol_graph.link(i, nid, "parent")
+            except Exception as e:
+                log(f"zol_graph L0->L1 link {nid} zlyhal (fail-open): {e!r}")
     ascended = ascend_higher(model=DREAM_MODEL)  # F8: dvihni L1->L2->L3
+    # C — SEN NAD GRAFOM: nad asociacnym grafom (related hrany z B) najdi husto
+    # prepojene komunity = vznikajuce temy a daj im strechu (abstrakt + parent
+    # hrany). Beh PO ascend, aby graf uz obsahoval aj cerstve parent hrany.
+    # Fail-open: chyba grafovej konsolidacie nezhodi sen.
+    try:
+        graph_abstracts = consolidate_graph(model=DREAM_MODEL)
+        ascended = (ascended or []) + graph_abstracts
+    except Exception as e:
+        log(f"consolidate_graph faza zlyhala (fail-open): {e!r}")
+        graph_abstracts = []
     # P2 SEMANTICKY DEDUP (cesta A): opus najde parafrazove duplikaty, auto-merge
     # so zachrannou stopou (state/dedup_trash.jsonl). Beh PO consolidate/ascend,
     # nech dedupuje aj cerstvo vzniknute L1/L2 koncepty.

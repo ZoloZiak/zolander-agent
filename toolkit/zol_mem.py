@@ -27,7 +27,7 @@ Vrstvy zostávajú ako METADATA (nie polomer):
   salience(0..1), confidence(0..1) — pre decay/konsolidáciu v 'sen' (F4)
 
 Použitie:
-  VPY=/Users/__USER__/zolander/.venv-yar/bin/python
+  VPY=/Users/__USER__/projects/zolander/.venv-yar/bin/python
   echo '{"text":"...", "kind":"semantic", "layer":"L1"}' | $VPY zol_mem.py remember
   echo '{"query":"...", "kind":"semantic", "topk":5}'    | $VPY zol_mem.py recall
   $VPY zol_mem.py decay
@@ -42,8 +42,8 @@ import subprocess
 
 HOME = os.path.expanduser("~")
 NODE = "/Users/__USER__/Applications/homebrew/bin/node"
-HS = "/Users/__USER__/zolo2.0/toolkit/hs.mjs"
-STATE = os.path.join(HOME, "zolander/state")
+HS = "/Users/__USER__/projects/zolo2.0/toolkit/hs.mjs"
+STATE = os.path.join(HOME, "projects/zolander/state")
 IDFILE = os.path.join(STATE, "mem_next_id.txt")
 NODE_ENV = dict(os.environ, NODE_PATH="/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules")
 
@@ -176,6 +176,7 @@ def cmd_remember():
     # DUAL-WRITE do Gemma cosine kolekcie (3. lens). FAIL-OPEN: ak daemon nebezi,
     # zaznam sa aj tak ulozi do Lorentz+index, len chyba v Gemma indexe (dobehne
     # backfill neskor). Vypnutelne env ZOL_RECALL_GEMMA=0.
+    gvec = None  # nechame si Gemma vektor pre priebezne 'related' hrany (B nizsie)
     if os.environ.get("ZOL_RECALL_GEMMA", "1") != "0":
         try:
             import urllib.request
@@ -190,6 +191,7 @@ def cmd_remember():
                               ensure_ascii=False) + "\n"
             hs("insert", "zol_mem_gemma", stdin=grec)
         except Exception:
+            gvec = None
             pass  # fail-open: Gemma index dobehne backfillom
 
     # lokálny index pre decay/konsolidáciu + BM25 korpus (DB nemá hromadný listing)
@@ -210,9 +212,43 @@ def cmd_remember():
             superseded = supersede_old
         except Exception:
             pass  # fail-open: graf nikdy nezhodi zapis
+
+    # --- B: PRIEBEZNE 'related' hrany (lacne, bez extra latencie) ---
+    # Prepajanie je metadata: nema cakat na nocny sen. Pouzijeme UZ spocitany
+    # Gemma vektor (gvec, dual-write vyssie) -> ziadny extra embed call. Gemma
+    # cosine je jediny SPOLAHLIVY semanticky lens (YAR Lorentz d~1.0 aj pre
+    # parafrazu = pre 'related' nepouzitelna, len na near-exact/supersede).
+    # Prah 0.70 = kalibrovany naostro (2026-08-14): d<0.65 realne suvisiace
+    # (napr. dva zaznamy o HyperspaceDB d=0.45), d>1.0 = ine temy = sum.
+    # Konzervativne: radsej menej ale realnych hran nez sum. Fail-open, vypnutelne
+    # ZOL_GRAPH_RELATED=0. Max hran/zaznam obmedzeny (ZOL_GRAPH_RELATED_MAX).
+    related_added = []
+    if (gvec is not None and superseded is None
+            and os.environ.get("ZOL_GRAPH_RELATED", "1") != "0"):
+        try:
+            thr = float(os.environ.get("ZOL_GRAPH_RELATED_THR", "0.70"))
+            maxn = int(os.environ.get("ZOL_GRAPH_RELATED_MAX", "3"))
+            near = hs("search", "zol_mem_gemma", maxn + 1,
+                      stdin=json.dumps({"vector": gvec})) or []
+            import zol_graph
+            for x in near:
+                xid = x.get("id")
+                if xid is None or xid == mid:
+                    continue  # preskoc seba
+                if x.get("distance", 9e9) > thr:
+                    continue  # nad prahom = ine temy
+                zol_graph.link(mid, xid, "related")
+                related_added.append(xid)
+                if len(related_added) >= maxn:
+                    break
+        except Exception:
+            pass  # fail-open: related hrany nikdy nezhodia zapis
+
     out = {"remembered": mid, "kind": kind, "col": col, "layer": layer}
     if superseded is not None:
         out["superseded"] = superseded
+    if related_added:
+        out["related"] = related_added
     print(json.dumps(out, ensure_ascii=False))
 
 

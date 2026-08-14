@@ -33,7 +33,7 @@ import time
 import fcntl
 
 HOME = os.path.expanduser("~")
-STATE = os.path.join(HOME, "zolander", "state")
+STATE = os.path.join(HOME, "projects", "zolander", "state")
 EDGES = os.path.join(STATE, "mem_edges.jsonl")
 TEMPORAL = os.path.join(STATE, "mem_temporal.jsonl")
 EDGE_TYPES = ("parent", "supersedes", "related")
@@ -158,6 +158,64 @@ def stats():
             "temporal_records": len(temporal), "superseded": superseded}
 
 
+def communities(min_size=3, edge="related"):
+    """Najdi husto prepojene KOMUNITY (suvisle komponenty) nad danym typom hrany.
+
+    Pouzitie (C — sen nad grafom): komunita 'related' uzlov = vznikajuca TEMA,
+    ktoru pamat sama zoskupila priebezne (B). Z takej komunity sa oplati
+    vydestilovat abstrakt — na rozdiel od nahodneho zhluku ma REALNU hustotu
+    hran (poistka proti prazdnemu pseudo-principu, abstraction-engine test).
+
+    Vracia zoznam komunit zoradeny podla hustoty (density = hrany/uzly), kazda:
+      {members:[ids], edges:N, density:float, has_parent:[ids co uz maju parent]}
+    Deterministicke, bez LLM. min_size = min pocet uzlov aby to bola komunita.
+    """
+    edges = _read(EDGES)
+    # graf len z danych related hran (neorientovane pre komponenty)
+    adj = {}
+    for e in edges:
+        if e.get("edge") != edge:
+            continue
+        a, b = e.get("from"), e.get("to")
+        if a is None or b is None or a == b:
+            continue
+        adj.setdefault(a, set()).add(b)
+        adj.setdefault(b, set()).add(a)
+    # kto uz ma parent (nech nekonsolidujeme to co uz ma nadhlad)
+    has_parent = set()
+    for e in edges:
+        if e.get("edge") == "parent":
+            has_parent.add(e.get("from"))
+    # suvisle komponenty (BFS)
+    seen = set()
+    comps = []
+    for node in adj:
+        if node in seen:
+            continue
+        stack = [node]
+        comp = set()
+        while stack:
+            x = stack.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            comp.add(x)
+            stack.extend(adj.get(x, ()) - seen)
+        if len(comp) < min_size:
+            continue
+        # spocitaj hrany vnutri komponentu
+        ec = 0
+        for m in comp:
+            ec += len(adj.get(m, set()) & comp)
+        ec //= 2  # neorientovane
+        density = ec / max(len(comp), 1)
+        comps.append({"members": sorted(comp), "edges": ec,
+                      "density": round(density, 3),
+                      "has_parent": sorted(comp & has_parent)})
+    comps.sort(key=lambda c: -c["density"])
+    return comps
+
+
 def main():
     a = sys.argv[1:]
     if not a:
@@ -174,6 +232,9 @@ def main():
     elif cmd == "subtree" and len(a) >= 2:
         print(json.dumps(subtree(int(a[1]), int(a[3]) if len(a) > 3 else 3),
                          ensure_ascii=False, indent=2))
+    elif cmd == "communities":
+        ms = int(a[1]) if len(a) > 1 else 3
+        print(json.dumps(communities(min_size=ms), ensure_ascii=False, indent=2))
     elif cmd == "active" and len(a) >= 2:
         act, info = is_active(int(a[1]))
         print(json.dumps({"id": int(a[1]), "active": act, "temporal": info}, ensure_ascii=False))
