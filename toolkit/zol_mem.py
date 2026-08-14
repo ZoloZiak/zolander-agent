@@ -141,6 +141,10 @@ def cmd_remember():
     # NEAR-EXACT dedup gate: ak uz existuje takmer identicky zaznam (d < prah),
     # NEvkladaj duplikat. Vyssia salience vyhrava: ak novy je salientnejsi, uloz
     # ho aj tak (dream loop neskor zluci); inak skip. Vypnutelne obj["no_dedup"].
+    # MEM0 UPDATE (2026-08-14): ak novy near-duplikat VYHRAVA salienciou, stary
+    # zaznam SUPERSEDUJEME (bitemporal valid_until) namiesto ticheho hromadenia
+    # dvoch verzii. Konzervativne: len near-exact (d<prah), len ked novy je salientnejsi.
+    supersede_old = None
     if not obj.get("no_dedup"):
         try:
             near = hs("search", MEM_COL, 1, stdin=json.dumps({"vector": vec})) or []
@@ -154,6 +158,8 @@ def cmd_remember():
                                           "dist": round(d0, 4), "kept": "existing"},
                                          ensure_ascii=False))
                         return
+                    # novy vyhrava -> po ulozeni supersedujeme stary
+                    supersede_old = near[0].get("id")
         except Exception:
             pass  # fail-open: dedup nikdy nezhodi zapis
 
@@ -167,6 +173,25 @@ def cmd_remember():
     rec = json.dumps({"id": mid, "vector": vec, "meta": meta}, ensure_ascii=False) + "\n"
     hs("insert", col, stdin=rec)
 
+    # DUAL-WRITE do Gemma cosine kolekcie (3. lens). FAIL-OPEN: ak daemon nebezi,
+    # zaznam sa aj tak ulozi do Lorentz+index, len chyba v Gemma indexe (dobehne
+    # backfill neskor). Vypnutelne env ZOL_RECALL_GEMMA=0.
+    if os.environ.get("ZOL_RECALL_GEMMA", "1") != "0":
+        try:
+            import urllib.request
+            port = os.environ.get("GEMMA_EMBED_PORT", "8901")
+            body = json.dumps({"texts": [text], "mode": "document"}).encode()
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/embed", data=body,
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                gvec = json.loads(r.read())["vectors"][0]
+            grec = json.dumps({"id": mid, "vector": gvec,
+                               "meta": {"kind": kind, "layer": layer, "text": text[:300]}},
+                              ensure_ascii=False) + "\n"
+            hs("insert", "zol_mem_gemma", stdin=grec)
+        except Exception:
+            pass  # fail-open: Gemma index dobehne backfillom
+
     # lokálny index pre decay/konsolidáciu + BM25 korpus (DB nemá hromadný listing)
     # base_salience = zafixovana povodna hodnota pre IDEMPOTENTNY decay (v2).
     # text[:300] (nie 120) — BM25 aj LLM re-rank potrebuju cely zmysel, nie utrzok.
@@ -175,8 +200,40 @@ def cmd_remember():
                             "salience": salience, "base_salience": round(salience, 3),
                             "confidence": confidence,
                             "ts": ts, "text": text[:300]}, ensure_ascii=False) + "\n")
-    print(json.dumps({"remembered": mid, "kind": kind, "col": col, "layer": layer},
-                     ensure_ascii=False))
+    # MEM0 UPDATE: ak novy zaznam nahradil salientnejsi near-duplikat, superseduj stary
+    # (bitemporal valid_until + supersedes hrana). Fail-open. Rani sa az PO ulozeni noveho.
+    superseded = None
+    if supersede_old is not None and supersede_old != mid:
+        try:
+            import zol_graph
+            zol_graph.supersede(mid, supersede_old)
+            superseded = supersede_old
+        except Exception:
+            pass  # fail-open: graf nikdy nezhodi zapis
+    out = {"remembered": mid, "kind": kind, "col": col, "layer": layer}
+    if superseded is not None:
+        out["superseded"] = superseded
+    print(json.dumps(out, ensure_ascii=False))
+
+
+def _gemma_query(query, fetch):
+    """3. lens: EmbeddingGemma cosine cez perzistentny daemon (:8901) + hs search na
+    kolekcii zol_mem_gemma. FAIL-OPEN: ak daemon/kolekcia nebezi, vrat [] (recall bezi
+    dalej na bm25+yar). Vypnutelne obj['no_gemma'] / env ZOL_RECALL_GEMMA=0.
+    Vrat [(id, cosine_score)]."""
+    import urllib.request
+    port = os.environ.get("GEMMA_EMBED_PORT", "8901")
+    try:
+        body = json.dumps({"texts": [query], "mode": "query"}).encode()
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/embed", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            vec = json.loads(r.read())["vectors"][0]
+        res = hs("search", "zol_mem_gemma", fetch, stdin=json.dumps({"vector": vec})) or []
+        # cosine kolekcia: mensia distance = blizsie; skore = 1/(1+dist)
+        return [(x.get("id"), 1.0 / (1.0 + x.get("distance", 9e9))) for x in res]
+    except Exception:
+        return []  # fail-open
 
 
 def cmd_recall():
@@ -207,13 +264,13 @@ def cmd_recall():
             lex = []  # fail-open: lexikalna vrstva nikdy nezhodi recall
 
     # --- SCORE FUZIA (min-max norm), NIE RRF ---
-    # RRF (rank-based) tu zlyhava: odmenuje konsenzus, takze sumove zaznamy co su
-    # v OBOCH rebrickoch stredne vysoko predbehnu zaznam so silnym signalom v JEDNOM
-    # (BM25 gap 3x sa v ranku strati). Preto normalizujeme SKORE oboch zdrojov na
-    # [0,1] a scitame s vahami. YAR je preukazatelne slaby (distances ~0.9-1.04 =
-    # skoro sum), preto lexikalny signal smie previazit ked je jednoznacny.
+    # RRF (rank-based) tu zlyhava (namerane 3x): odmenuje konsenzus, sumove zaznamy
+    # v OBOCH rebrickoch stredne vysoko predbehnu silny signal v JEDNOM. Preto min-max
+    # score fusion s vahami. Vahy = zmerane optimum (mem_gemma_tune.py 2026-08-14):
+    # bm25=1.6, yar=1.0, gemma=0.8. Gemma je 3. lens (EmbeddingGemma cosine), FAIL-OPEN.
     W_SEM = float(os.environ.get("ZOL_RECALL_W_SEM", "1.0"))
-    W_LEX = float(os.environ.get("ZOL_RECALL_W_LEX", "1.3"))
+    W_LEX = float(os.environ.get("ZOL_RECALL_W_LEX", "1.6"))
+    W_GEM = float(os.environ.get("ZOL_RECALL_W_GEM", "0.8"))
 
     def _norm(pairs):
         # pairs: list[(id, raw_score)], vyssie=lepsie. Vrat {id: norm[0..1]}.
@@ -225,8 +282,14 @@ def cmd_recall():
             return {i: 1.0 for i, _ in pairs}
         return {i: (s - lo) / (hi - lo) for i, s in pairs}
 
+    # 3. lens: Gemma (fail-open, vypnutelne)
+    use_gem = (not obj.get("no_gemma")
+               and os.environ.get("ZOL_RECALL_GEMMA", "1") != "0")
+    gem = _gemma_query(query, fetch) if use_gem else []
+
     sem_norm = _norm([(r.get("id"), 1.0 / (1.0 + r.get("distance", 9e9))) for r in res])
     lex_norm = _norm([(mid, sc) for mid, sc, _ in lex])
+    gem_norm = _norm(gem)
 
     meta_by_id = {}
     for r in res:
@@ -243,7 +306,8 @@ def cmd_recall():
     fused_score = {}
     for mid in meta_by_id:
         fused_score[mid] = (W_SEM * sem_norm.get(mid, 0.0)
-                            + W_LEX * lex_norm.get(mid, 0.0))
+                            + W_LEX * lex_norm.get(mid, 0.0)
+                            + W_GEM * gem_norm.get(mid, 0.0))
 
     ordered = sorted(fused_score.items(), key=lambda kv: -kv[1])
     # najprv aplikuj kind filter, potom priprav kandidatov

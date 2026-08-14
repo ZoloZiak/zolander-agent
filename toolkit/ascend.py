@@ -229,6 +229,15 @@ def step(from_layer, to_layer, model="opus", dry=False):
             for i in ids:
                 done.add(i)
             created.append({"id": nid, "layer": to_layer, "text": text, "from_ids": ids})
+            # NADHLAD: zaznamenaj hierarchicke hrany zdroj -> abstrakt (parent).
+            # Tym sa abstrakcia stane navigovatelnou (zol_graph subtree ukaze
+            # "z coho tento koncept vznikol"). Fail-open: chyba grafu nezhodi ascend.
+            try:
+                import zol_graph
+                for i in ids:
+                    zol_graph.link(i, nid, "parent")
+            except Exception as e:
+                log(f"zol_graph link {nid} zlyhal (fail-open): {e!r}")
     if not dry:
         save_ascended(done)
     log(f"step {from_layer}->{to_layer} ({model}): vytvorene={len(created)} groups={len(groups)}")
