@@ -100,18 +100,24 @@ def cmd_start():
         print()
 
     # 1) recall (jedna kolekcia zol_mem; kind=None => vsetky typy pamate)
+    # rerank:false — session-start ide o SIRKU kontextu, nie dokonale poradie;
+    # +8s/1 Opus call na kazdy nabeh (aj gateway) netreba. Priamy recall ma rerank ON.
     rc, out, err = _run([VPY, ZOL_MEM, "recall"],
-                        stdin=json.dumps({"query": query, "topk": 6}))
+                        stdin=json.dumps({"query": query, "topk": 6, "rerank": False}))
     if rc == 0:
         try:
             hits = json.loads(out)
             print("PAMÄŤ (top spomienky k stavu):")
             for h in hits:
-                d = h.get("distance", 0)
                 m = h.get("meta", {})
                 txt = m.get("text", "")[:90]
                 mt = (m.get("memory_type") or m.get("kind") or "?")
-                print(f"  [{mt:10s} d={d:.3f}] {txt}")
+                d = h.get("distance")
+                sc = h.get("score")
+                # distance je None pre lexical-only (BM25) zaznamy -> ukaz score
+                rank = f"d={d:.3f}" if isinstance(d, (int, float)) else \
+                       (f"s={sc:.2f}" if isinstance(sc, (int, float)) else "lex")
+                print(f"  [{mt:10s} {rank}] {txt}")
         except Exception:
             print("recall raw:", out[:400])
     else:

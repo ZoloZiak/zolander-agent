@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Iniciativna kontrola kvality recallu (tyzdenne). Ticho ked OK; navrh na WhatsApp
+  pri regresii MRR alebo velkom raste korpusu.
+  Instalacia:
+    cp deploy/pl.zolander.evalwatch.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/pl.zolander.evalwatch.plist
+    launchctl print gui/$(id -u)/pl.zolander.evalwatch   # over state=running
+  Odstranenie:
+    launchctl bootout gui/$(id -u)/pl.zolander.evalwatch
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>pl.zolander.evalwatch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/__USER__/zolander/toolkit/zol_eval_watch.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SSL_CERT_FILE</key>
+    <string>/Users/__USER__/.config/certs/corp-ca-bundle.pem</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StartInterval</key>
+  <integer>604800</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/__USER__/zolander/logs/evalwatch.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/__USER__/zolander/logs/evalwatch.err.log</string>
+</dict>
+</plist>

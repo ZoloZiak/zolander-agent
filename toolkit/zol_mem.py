@@ -167,13 +167,14 @@ def cmd_remember():
     rec = json.dumps({"id": mid, "vector": vec, "meta": meta}, ensure_ascii=False) + "\n"
     hs("insert", col, stdin=rec)
 
-    # lokálny index pre decay/konsolidáciu (DB nemá hromadný listing)
+    # lokálny index pre decay/konsolidáciu + BM25 korpus (DB nemá hromadný listing)
     # base_salience = zafixovana povodna hodnota pre IDEMPOTENTNY decay (v2).
+    # text[:300] (nie 120) — BM25 aj LLM re-rank potrebuju cely zmysel, nie utrzok.
     with open(os.path.join(STATE, "mem_index.jsonl"), "a") as f:
         f.write(json.dumps({"id": mid, "col": col, "kind": kind, "layer": layer,
                             "salience": salience, "base_salience": round(salience, 3),
                             "confidence": confidence,
-                            "ts": ts, "text": text[:120]}, ensure_ascii=False) + "\n")
+                            "ts": ts, "text": text[:300]}, ensure_ascii=False) + "\n")
     print(json.dumps({"remembered": mid, "kind": kind, "col": col, "layer": layer},
                      ensure_ascii=False))
 
@@ -183,19 +184,110 @@ def cmd_recall():
     query = obj["query"]
     topk = int(obj.get("topk", 5))
     kind = obj.get("kind")  # None => všetky typy; inak filter memory_type
+    # HYBRID (2026-08): YAR semantic + BM25 lexikalna poistka, zlucene cez RRF.
+    # Dovod: YAR 129D Lorentz je slaby na parafrazu (~52%) -> fakt co v pamati JE
+    # sa cez cisto semanticky recall obcas nevrati. BM25 nad mem_index.jsonl chyti
+    # zhodu klucovych slov (deterministicky, bez modelu). RRF nepotrebuje ladit vahy
+    # medzi nezrovnatelnymi skalami (Lorentz distance vs BM25 skore). Vypnutelne
+    # obj["no_lexical"]=true alebo env ZOL_RECALL_LEXICAL=0.
     vec = embed_one(query)
-    # jedna kolekcia; ak je filter, vytiahni viac a odfiltruj podla memory_type
-    fetch = topk * 4 if kind else topk
+    fetch = topk * 4  # vytiahni sirsie, po zluceni + filtri orez na topk
     res = hs("search", MEM_COL, fetch, stdin=json.dumps({"vector": vec})) or []
-    results = []
     for r in res:
         r["col"] = MEM_COL
+
+    use_lex = (not obj.get("no_lexical")
+               and os.environ.get("ZOL_RECALL_LEXICAL", "1") != "0")
+    lex = []
+    if use_lex:
+        try:
+            from mem_lexical import search as lex_search
+            lex = lex_search(query, topk=fetch)  # [(id, score, doc)]
+        except Exception:
+            lex = []  # fail-open: lexikalna vrstva nikdy nezhodi recall
+
+    # --- SCORE FUZIA (min-max norm), NIE RRF ---
+    # RRF (rank-based) tu zlyhava: odmenuje konsenzus, takze sumove zaznamy co su
+    # v OBOCH rebrickoch stredne vysoko predbehnu zaznam so silnym signalom v JEDNOM
+    # (BM25 gap 3x sa v ranku strati). Preto normalizujeme SKORE oboch zdrojov na
+    # [0,1] a scitame s vahami. YAR je preukazatelne slaby (distances ~0.9-1.04 =
+    # skoro sum), preto lexikalny signal smie previazit ked je jednoznacny.
+    W_SEM = float(os.environ.get("ZOL_RECALL_W_SEM", "1.0"))
+    W_LEX = float(os.environ.get("ZOL_RECALL_W_LEX", "1.3"))
+
+    def _norm(pairs):
+        # pairs: list[(id, raw_score)], vyssie=lepsie. Vrat {id: norm[0..1]}.
+        if not pairs:
+            return {}
+        vals = [s for _, s in pairs]
+        lo, hi = min(vals), max(vals)
+        if hi <= lo:
+            return {i: 1.0 for i, _ in pairs}
+        return {i: (s - lo) / (hi - lo) for i, s in pairs}
+
+    sem_norm = _norm([(r.get("id"), 1.0 / (1.0 + r.get("distance", 9e9))) for r in res])
+    lex_norm = _norm([(mid, sc) for mid, sc, _ in lex])
+
+    meta_by_id = {}
+    for r in res:
+        meta_by_id[r.get("id")] = r
+    for mid, _sc, doc in lex:
+        meta_by_id.setdefault(mid, {"id": mid, "col": MEM_COL,
+                                    "meta": {"text": doc.get("text", ""),
+                                             "kind": doc.get("kind"),
+                                             "memory_type": doc.get("kind"),
+                                             "layer": doc.get("layer"),
+                                             "ts": doc.get("ts")},
+                                    "distance": None, "lexical_only": True})
+
+    fused_score = {}
+    for mid in meta_by_id:
+        fused_score[mid] = (W_SEM * sem_norm.get(mid, 0.0)
+                            + W_LEX * lex_norm.get(mid, 0.0))
+
+    ordered = sorted(fused_score.items(), key=lambda kv: -kv[1])
+    # najprv aplikuj kind filter, potom priprav kandidatov
+    cand = []
+    for mid, fused in ordered:
+        r = meta_by_id.get(mid)
+        if not r:
+            continue
         m = r.get("meta", {}) or {}
         if kind and (m.get("memory_type") or m.get("kind")) != kind:
             continue
-        results.append(r)
-    results.sort(key=lambda r: r.get("distance", 9e9))
-    print(json.dumps(results[:topk], ensure_ascii=False, indent=2))
+        r["score"] = round(fused, 4)
+        cand.append(r)
+
+    # VOLITELNY LLM re-rank. SMART DEFAULT (2026-08-13): ON pre priamy/interaktivny
+    # recall (ked aktivne hladas — presnost sa ceni, +8s nevadi), ale session-start
+    # (hook_recall -> zol_session start, aj CLI aj gateway) posiela explicitne
+    # rerank:false — tam ide o SIRKU kontextu, nie dokonale poradie, a +8s/1 Opus call
+    # na KAZDY nabeh by vratil stary "gateway nereaguje" neduh + prilieval do 429.
+    # Priorita: explicitny obj["rerank"] (True/False) > env ZOL_RECALL_RERANK (0/1) > default ON.
+    if "rerank" in obj:
+        use_rr = bool(obj["rerank"])
+    elif "ZOL_RECALL_RERANK" in os.environ:
+        use_rr = os.environ["ZOL_RECALL_RERANK"] == "1"
+    else:
+        use_rr = True  # default ON pre priamy recall
+    if use_rr and cand:
+        try:
+            from mem_rerank import rerank
+            pool = cand[:max(topk * 2, 8)]  # re-rankuj sirsi pool, nie len topk
+            texts = {r.get("id"): (r.get("meta", {}) or {}).get("text", "") for r in pool}
+            order2 = rerank(query, [{"id": r.get("id"), "text": texts[r.get("id")]}
+                                    for r in pool])
+            by_id = {r.get("id"): r for r in pool}
+            reranked = [by_id[i] for i in order2 if i in by_id]
+            # dolep zvysok co nebol v poole
+            reranked += [r for r in cand if r.get("id") not in {x.get("id") for x in reranked}]
+            for r in reranked:
+                r["reranked"] = True
+            cand = reranked
+        except Exception:
+            pass  # fail-open: re-rank nikdy nezhodi recall
+
+    print(json.dumps(cand[:topk], ensure_ascii=False, indent=2))
 
 
 def cmd_stats():
