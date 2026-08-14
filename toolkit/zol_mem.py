@@ -309,6 +309,33 @@ def cmd_recall():
                             + W_LEX * lex_norm.get(mid, 0.0)
                             + W_GEM * gem_norm.get(mid, 0.0))
 
+    # --- UNIFIED SKORE (Generative Agents, Park 2023): finalne = relevance * recency
+    # * importance. Relevance = fuzia lensov (hore). Recency = exp. decay podla veku ts.
+    # Importance = salience zaznamu. Vahy exponentov konfig; VYPNUTELNE ZOL_RECALL_UNIFIED=0
+    # Fail-open: chybajuce ts/salience => neutral 1.0.
+    use_uni = (not obj.get("no_unified")
+               and os.environ.get("ZOL_RECALL_UNIFIED", "1") != "0")
+    HALFLIFE_D = float(os.environ.get("ZOL_RECALL_RECENCY_HALFLIFE", "45"))  # dni
+    A_REC = float(os.environ.get("ZOL_RECALL_A_RECENCY", "0.5"))   # vaha recency
+    A_IMP = float(os.environ.get("ZOL_RECALL_A_IMPORTANCE", "0.5"))  # vaha importance
+    _now_s = time.time()
+
+    def _recency(meta):
+        ts = meta.get("ts")
+        if not ts:
+            return 1.0
+        try:
+            age_d = (_now_s - time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))) / 86400.0
+            return 0.5 ** (max(age_d, 0.0) / HALFLIFE_D)  # 1.0 cerstve -> 0.5 po halflife
+        except Exception:
+            return 1.0
+
+    def _importance(meta):
+        try:
+            return max(0.0, min(1.0, float(meta.get("salience", 0.5) or 0.5)))
+        except Exception:
+            return 0.5
+
     ordered = sorted(fused_score.items(), key=lambda kv: -kv[1])
     # najprv aplikuj kind filter, potom priprav kandidatov
     cand = []
@@ -319,8 +346,19 @@ def cmd_recall():
         m = r.get("meta", {}) or {}
         if kind and (m.get("memory_type") or m.get("kind")) != kind:
             continue
-        r["score"] = round(fused, 4)
+        if use_uni:
+            # multiplikativny boost: relevance * recency^a * importance^a. Exponenty
+            # < 1 tlmia, aby recency/importance NEprevalcovali relevance (poradie 1. faktor).
+            rec = _recency(m) ** A_REC
+            imp = (0.5 + 0.5 * _importance(m)) ** A_IMP  # mapuj [0,1]->[0.5,1] nech nula netopi
+            r["score"] = round(fused * rec * imp, 4)
+            r["_relevance"] = round(fused, 4)
+        else:
+            r["score"] = round(fused, 4)
         cand.append(r)
+    # po unified boost preusporiadaj (relevance poradie sa mohlo zmenit)
+    if use_uni:
+        cand.sort(key=lambda r: -r.get("score", 0))
 
     # VOLITELNY LLM re-rank. SMART DEFAULT (2026-08-13): ON pre priamy/interaktivny
     # recall (ked aktivne hladas — presnost sa ceni, +8s nevadi), ale session-start
