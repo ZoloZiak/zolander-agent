@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Perzistentny EmbeddingGemma embed daemon (3. lens pamate). Drzi model v GPU pamati.
+  Instalacia:
+    cp deploy/pl.zolander.gemmaembed.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/pl.zolander.gemmaembed.plist
+  Odstranenie:
+    launchctl bootout gui/$(id -u)/pl.zolander.gemmaembed
+  Fail-open: ak nebezi, recall pobezi na bm25+yar (Gemma je nepovinny lens).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>pl.zolander.gemmaembed</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/__USER__/.local/share/uv/tools/vmlx/bin/python</string>
+    <string>/Users/__USER__/zolander/toolkit/gemma_embed_server.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HF_HUB_OFFLINE</key><string>1</string>
+    <key>TRANSFORMERS_OFFLINE</key><string>1</string>
+    <key>GEMMA_EMBED_PORT</key><string>8901</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/__USER__/zolander/logs/gemma_embed.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/__USER__/zolander/logs/gemma_embed.err.log</string>
+</dict>
+</plist>
