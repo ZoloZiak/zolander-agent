@@ -70,8 +70,37 @@ def hset(hermes, key, value):
     subprocess.run([hermes, "config", "set", key, value], check=True)
 
 
+def guide():
+    """Vypis kratky navod PRIAMO pred promptom — user nemusi hladat v README.
+    Ukaze sa len ked realne ideme pytat (interaktivne, hodnoty nie su v env)."""
+    if os.environ.get("PALANTIR_HOST") and os.environ.get("PALANTIR_TOKEN"):
+        return
+    if not sys.stdin.isatty():
+        return
+    print("""
+──────────────────────────────────────────────────────────────
+ Palantir Foundry — need a free AIP Developer Tier account.
+──────────────────────────────────────────────────────────────
+ 1) Sign up (free, no card):
+      https://signup.palantirfoundry.com/signup?signupPermitCode=BUILD_WITH_AIP
+    Pick "AIP Developer Tier". (May ask for ID + face scan — their KYC.)
+
+ 2) HOST = your tenant URL from the browser address bar once logged in:
+      https://YOURNAME.REGION.palantirfoundry.co.uk   (REGION e.g. euw-3, us-1)
+    Paste the bare tenant URL — the proxy path is appended for you.
+
+ 3) TOKEN = Settings -> your profile -> Tokens
+      (a.k.a. Account / Personal Access Tokens) -> Generate.
+    Copy it immediately — it is shown only ONCE. Longest expiry is best.
+
+ No Palantir? Ctrl-C here and just run `hermes model` to pick any provider.
+──────────────────────────────────────────────────────────────
+""")
+
+
 def main():
     hermes = find_hermes()
+    guide()
 
     host = ask("Palantir Foundry host (e.g. myorg.euw-3.palantirfoundry.co.uk): ", "PALANTIR_HOST")
     token = ask("Palantir API token (stored locally in ~/.hermes/.env, 0600): ", "PALANTIR_TOKEN")
