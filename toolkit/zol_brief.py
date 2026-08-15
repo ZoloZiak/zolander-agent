@@ -19,7 +19,7 @@ import datetime
 import subprocess
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 LOGS = os.path.join(ROOT, "logs")
 DENNIKY = os.path.join(ROOT, "denniky")
@@ -70,6 +70,28 @@ def count_ticks_24h():
     except FileNotFoundError:
         pass
     return ok, fails
+
+
+def last_tick_age_min():
+    """Vek posledneho 'tick OK' riadku v loop.log v minutach, alebo None.
+    Krizova kontrola k heartbeatu: po prebudeni Macu sa launchd brief job moze
+    spustit skor nez loop stihne tiknut -> heartbeat je stale, ale loop realne
+    zije. Preto pred poplachom overime aj cerstvost posledneho ticku."""
+    last_ts = None
+    try:
+        with open(LOOPLOG, encoding="utf-8") as f:
+            for line in f:
+                if "tick OK" not in line:
+                    continue
+                try:
+                    last_ts = datetime.datetime.strptime(line[:19], "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue
+    except FileNotFoundError:
+        return None
+    if last_ts is None:
+        return None
+    return (now() - last_ts).total_seconds() / 60.0
 
 
 def db_up(host="127.0.0.1", port=50051, timeout=3):
@@ -155,7 +177,15 @@ def build_message():
     if age is None:
         parts.append("- loop: NEZNAMY (heartbeat sa neda precitat)")
     elif age > 45:
-        parts.append(f"- loop: STOJI? posledny tep pred {age:.0f} min")
+        # Krizova kontrola: po prebudeni Macu je heartbeat stale, ale loop moze
+        # realne zit. Ak posledny 'tick OK' je cerstvy (<45 min), nie je to vypadok
+        # ale len wake-up race medzi launchd jobmi -> nehlas falosny poplach.
+        tick_age = last_tick_age_min()
+        if tick_age is not None and tick_age <= 45:
+            parts.append(f"- loop: OK (tick pred {tick_age:.0f} min; heartbeat stale "
+                         f"{age:.0f} min — Mac spal, launchd dobehol po prebudeni)")
+        else:
+            parts.append(f"- loop: STOJI? posledny tep pred {age:.0f} min")
     else:
         parts.append(f"- loop: OK (tep pred {age:.0f} min)")
 
