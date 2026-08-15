@@ -19,15 +19,17 @@ import json
 import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VPY = "/Users/__USER__/zolander/.venv-yar/bin/python"
+sys.path.insert(0, HERE)
+from zol_paths import venv_python, ZROOT, ZOLO2
+VPY = venv_python()
 ZOL_MEM = os.path.join(HERE, "zol_mem.py")
 ZOL_GUARD = os.path.join(HERE, "zol_guard.py")
 LENS = os.path.join(HERE, "lens.py")
 PATTERNS = os.path.join(HERE, "patterns.py")
-PLAN = "/Users/__USER__/zolander/PLAN.md"
+PLAN = os.path.join(ZROOT, "PLAN.md")
 SYS_PY = "/usr/bin/python3"
-INBOX = "/Users/__USER__/zolander/state/inbox.md"
-BATCH_STATE = "/Users/__USER__/zolo2.0/work/masterplan/_batch_state.json"
+INBOX = os.path.join(ZROOT, "state", "inbox.md")
+BATCH_STATE = os.path.join(ZOLO2, "work", "masterplan", "_batch_state.json")
 
 DEFAULT_START_QUERY = "aktualny stav Zolander a otvorene ulohy co treba dokoncit"
 

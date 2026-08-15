@@ -31,15 +31,15 @@ import time
 import subprocess
 
 HOME = os.path.expanduser("~")
-STATE = os.path.join(HOME, "zolander/state")
+STATE = os.path.join(HOME, "projects/zolander/state")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 HITS = os.path.join(STATE, "recall_hits.jsonl")     # {id, ts} append pri kazdom recall hite
 ARCHIVE = os.path.join(STATE, "mem_archive.jsonl")  # archivovane (obnovitelne)
 GC_STATE = os.path.join(STATE, "gc_cycles.json")    # pocitadlo GC cyklov
-NODE = "/Users/__USER__/Applications/homebrew/bin/node"
-HS = "/Users/__USER__/zolo2.0/toolkit/hs.mjs"
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from zol_paths import NODE, HS, NODE_ENV  # prenositelne cesty (auto-detect)
 MEM_COL = "zol_mem"
-NODE_ENV = dict(os.environ, NODE_PATH="/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules")
 
 STALE_CYCLES = int(os.environ.get("ZOL_GC_STALE_CYCLES", "30"))
 MIN_CONF = float(os.environ.get("ZOL_GC_MIN_CONF", "0.5"))

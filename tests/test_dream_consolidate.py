@@ -3,9 +3,9 @@
 vracia destilaty; remember_l1 je az v dream()). Overuje ze epizody z 2 roznych tem
 vyprodukuju 2 samostatne CISTE L1, nie 1 rozmazany.
 """
-import sys
-sys.path.insert(0, "/Users/__USER__/zolander/toolkit")
-sys.path.insert(0, "/Users/__USER__/zolo2.0/toolkit")
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolo2.0", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolo2.0","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolo2.0","toolkit"))
 import zolander_dream as d
 
 # 4 epizody: 2 o zdravi/behu, 2 o kode/debugovani. Rozne temy.

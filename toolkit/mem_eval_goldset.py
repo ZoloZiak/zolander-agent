@@ -14,9 +14,9 @@ import sys
 import json
 
 HOME = os.path.expanduser("~")
-IDX = os.path.join(HOME, "zolander", "state", "mem_index.jsonl")
-OUT = os.path.join(HOME, "zolander", "state", "mem_eval_gold.json")
-sys.path.insert(0, "/Users/__USER__/zolo2.0/toolkit")
+IDX = os.path.join(HOME, "projects", "zolander", "state", "mem_index.jsonl")
+OUT = os.path.join(HOME, "projects", "zolander", "state", "mem_eval_gold.json")
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolo2.0", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolo2.0","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolo2.0","toolkit"))
 
 # kolko zaznamov do gold-setu a ako husto vzorkovat naprie korpusom
 N_SAMPLE = int(os.environ.get("EVAL_N", "24"))

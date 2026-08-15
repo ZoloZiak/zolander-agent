@@ -12,11 +12,11 @@ import subprocess
 import urllib.request
 
 HOME = os.path.expanduser("~")
-STATE = os.path.join(HOME, "zolander", "state")
+STATE = os.path.join(HOME, "projects", "zolander", "state")
 IDX = os.path.join(STATE, "mem_index.jsonl")
-NODE = "/Users/__USER__/Applications/homebrew/bin/node"
-HS = "/Users/__USER__/zolo2.0/toolkit/hs.mjs"
-NODE_ENV = dict(os.environ, NODE_PATH="/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules")
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from zol_paths import NODE, HS, NODE_ENV  # prenositelne cesty (auto-detect)
 COL = "zol_mem_gemma"
 EMBED_URL = "http://127.0.0.1:8901/embed"
 

@@ -23,7 +23,7 @@ Preco vlastny Lyapunov proxy namiesto MCP:
   kontrakcia = konvergencia), meria vzdialenost NATIVNE v Lorentz priestore.
 
 Beh:
-  VENV_YAR=~/zolander/.venv-yar/bin/python
+  VENV_YAR=~/projects/zolander/.venv-yar/bin/python
   echo '{"problem":"..."}' | python3 lens.py lift            # dvojity pohlad (LLM)
   echo '{"steps":["krok1","krok2",...]}' | $VENV_YAR lens.py stability   # texty -> embed
   echo '{"vectors":[[...],[...]]}' | python3 lens.py stability      # uz-vektory (bez GPU)
@@ -35,10 +35,10 @@ import math
 
 # palantir_client (chat/LLM) zije v zolo2.0/toolkit; embedding je ODDELENY
 # subprocess do VENV_YAR (torch tam, nie tu).
-sys.path.insert(0, "/Users/__USER__/zolo2.0/toolkit")
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolo2.0", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolo2.0","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolo2.0","toolkit"))
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 VENV_YAR = os.path.join(ROOT, ".venv-yar", "bin", "python")
 EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 

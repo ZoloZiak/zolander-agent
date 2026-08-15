@@ -15,7 +15,7 @@ import re
 import sys
 import json
 
-sys.path.insert(0, "/Users/__USER__/zolo2.0/toolkit")
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolo2.0", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolo2.0","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolo2.0","toolkit"))
 
 _SYS = (
     "Si presny re-ranker pamate. Dostanes OTAZKU a ZOZNAM kandidatnych spomienok "

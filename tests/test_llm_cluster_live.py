@@ -6,12 +6,12 @@ cisteho embeddingu (PLAN §20):
 Ocakavanie: skupina {kamera, gitara} spolu; {odolnost pamate}, {rano cvicenie}
 mimo nej (samostatne alebo vlastne).
 """
-import sys, subprocess, json, math
-sys.path.insert(0, "/Users/__USER__/zolander/toolkit")
-sys.path.insert(0, "/Users/__USER__/zolo2.0/toolkit")
-
-VENV_YAR = "/Users/__USER__/zolander/.venv-yar/bin/python"
-EMBED = "/Users/__USER__/zolander/toolkit/embed_yar.py"
+import os, sys, subprocess, json, math
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolo2.0", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolo2.0","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolo2.0","toolkit"))
+from zol_paths import venv_python, here as _here
+VENV_YAR = venv_python()
+EMBED = os.path.join(_here, "embed_yar.py")
 
 def embed_many(texts):
     payload = "".join(json.dumps({"id": i, "text": t}, ensure_ascii=False) + "\n"

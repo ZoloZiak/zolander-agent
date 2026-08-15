@@ -27,15 +27,15 @@ import time
 import subprocess
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 TRASH = os.path.join(STATE, "dedup_trash.jsonl")
-NODE = "/Users/__USER__/Applications/homebrew/bin/node"
-HS = "/Users/__USER__/zolo2.0/toolkit/hs.mjs"
-NODE_ENV = dict(os.environ, NODE_PATH="/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules")
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from zol_paths import NODE, HS, NODE_ENV  # prenositelne cesty (auto-detect)
 MEM_COL = "zol_mem"
-sys.path.insert(0, os.path.join(HOME, "zolo2.0", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
 
 LAYER_RANK = {"L3": 3, "L2": 2, "L1": 1, "L0": 0}
 # ak by pamat narastla nad tento pocet, davkuj (opus prompt by bol privelky).

@@ -2,7 +2,7 @@
 """Izolovany test _parse_groups (bez LLM). Overuje validaciu zoskupenia:
 prijme len ked kazdy index 0..n-1 je pokryty prave raz."""
 import sys, os
-sys.path.insert(0, "/Users/__USER__/zolander/toolkit")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cluster_llm import _parse_groups
 
 def check(desc, raw, n, expect):

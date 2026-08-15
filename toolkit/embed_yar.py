@@ -8,7 +8,7 @@ Polomer (hĺbka abstrakcie) je NAUČENÝ modelom (norma vektora v hlave),
 NIE nalepený tabuľkou LAYER_R. To je jadro opravy cargo-cultu (PLAN §11/§14).
 
 Použitie (stdin JSONL {id, text} -> stdout JSONL {id, vector[129]}):
-  VPY=/Users/__USER__/zolander/.venv-yar/bin/python
+  VPY=$HOME/projects/zolander/.venv-yar/bin/python
   echo '{"id":1,"text":"..."}' | $VPY embed_yar.py
   $VPY embed_yar.py < atoms.jsonl > vectors.jsonl
 
@@ -27,7 +27,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import torch
 from transformers import AutoTokenizer, AutoModel
 
-MODEL_ID = os.environ.get("YAR_MODEL", "/Users/__USER__/models/yar_v5_embedding")
+MODEL_ID = os.environ.get("YAR_MODEL", os.path.expanduser("~/models/yar_v5_embedding"))
 TARGET_DIM = int(os.environ.get("YAR_TARGET_DIM", "128"))  # -> 129D Lorentz
 BATCH = int(os.environ.get("YAR_BATCH", "16"))
 DEVICE = "cpu"  # MPS bf16 matmul bug; 0.5B na CPU je dostatočne rýchle
