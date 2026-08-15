@@ -2,8 +2,8 @@
 """Test mechanickej double-take brany should_double_take (LLM-free, deterministicke).
 Overuje ze trivialne vstupy sa preskocia a vazne rozhodovacie otazky spustia double-take.
 """
-import sys
-sys.path.insert(0, "/Users/__USER__/zolander/toolkit")
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lens import should_double_take
 
 # (text, ocakavane_serious)
