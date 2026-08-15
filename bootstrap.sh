@@ -95,15 +95,29 @@ else
 fi
 
 # --- 6b. optional: Palantir Foundry LLM proxy ------------------------------
-# Off unless you ask for it. Wires Claude/GPT/Gemini via your own Foundry
-# server + token (prompted, never stored in this repo). Skip and use any of
-# Hermes' 20+ providers instead with `hermes model`.
+# Palantir Foundry's Developer Tier exposes Claude/GPT/Gemini behind one proxy.
+# If you have access, drop your host + token here and all three get wired as
+# providers in one go. No Palantir? Just press Enter to skip and pick any of
+# Hermes' 20+ providers later with `hermes model`. Secrets go to ~/.hermes/.env
+# (0600), never this repo. Non-interactive: set ZOLANDER_PALANTIR=1 + PALANTIR_HOST
+# + PALANTIR_TOKEN, or ZOLANDER_PALANTIR=0 to skip silently.
+do_palantir=0
 if [ "${ZOLANDER_PALANTIR:-}" = "1" ]; then
-  say "Configuring Palantir providers (interactive)"
+  do_palantir=1
+elif [ "${ZOLANDER_PALANTIR:-}" = "0" ]; then
+  do_palantir=0
+elif [ -t 0 ]; then
+  printf '\n'
+  read -r -p "Wire a Palantir Foundry LLM proxy now? [y/N] " _ans
+  case "$_ans" in [Yy]*) do_palantir=1 ;; esac
+fi
+
+if [ "$do_palantir" = "1" ]; then
+  say "Configuring Palantir providers"
   python3 "$ROOT/toolkit/configure_palantir.py" || warn "Palantir wiring failed — re-run toolkit/configure_palantir.py"
 else
-  warn "Palantir wiring skipped. To enable: ZOLANDER_PALANTIR=1 bash bootstrap.sh"
-  warn "  (or run it later:  python3 $ROOT/toolkit/configure_palantir.py)"
+  warn "Palantir wiring skipped. Pick a model later with: hermes model"
+  warn "  (or wire Palantir anytime:  python3 $ROOT/toolkit/configure_palantir.py)"
 fi
 
 # --- 6c. skills from their own sources (no forks) ---------------------------
