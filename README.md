@@ -399,6 +399,31 @@ Palantir support is config-level (custom providers via `hermes config set`), not
 patches, so it survives `hermes update`. Your token stays in `~/.hermes/.env`, never in
 this repo.
 
+#### Getting a Palantir Foundry token (optional)
+
+Foundry's **AIP Developer Tier** is free (no card) and gives you Claude, GPT and Gemini
+behind one proxy on your own tenant. If you have it, `configure_palantir.py` (or the
+`ZOLANDER_PALANTIR=1` install) wires all three in one go. To get the two values it asks for:
+
+1. **Create the account.** Overview at <https://www.palantir.com/aip/developers/>; sign up
+   at <https://signup.palantirfoundry.com/signup?signupPermitCode=BUILD_WITH_AIP> and pick
+   the free AIP Developer Tier. Heads-up: signup may require identity verification (photo ID
+   + face scan) — that's their standard KYC, done directly with them, not with this project.
+2. **Find your base URL.** After signup you get your own tenant at
+   `https://YOURNAME.REGION.palantirfoundry.co.uk` (REGION is e.g. `euw-3`, `us-1`). It's in
+   the address bar once you log in. The installer appends `/api/v2/llm/proxy` for you, so the
+   bare tenant URL is enough.
+3. **Generate the token.** Settings → your profile → Tokens (may sit under Account /
+   *Personal Access Tokens*) → Generate. Name it e.g. `hermes`, set the longest expiry, and
+   **copy it immediately — it's shown only once.** If it ever expires, generate a new one and
+   re-run; the account stays.
+
+Developer Tier has no per-token billing — only per-minute throughput limits (roughly Claude
+~50 req/min, GPT/Gemini ~100 req/min, ~0.5M tokens/min). Exceeding them returns HTTP 429;
+wait a moment and continue. Check exact limits in Foundry under *Resource Management → AIP
+usage and limits*, and enabled models under *Language Models* (if names differ from the
+defaults, adjust the `palantir-*` provider blocks in `~/.hermes/config.yaml`).
+
 Prereqs the script expects to already exist: [Hermes Agent](https://hermes-agent.nousresearch.com),
 Docker (for HyperspaceDB), Node with the HyperspaceDB SDK, Python with `cryptography`,
 and a **native hyperbolic embedder** (the reference uses YAR v5 via `embed_yar.py`; plug
