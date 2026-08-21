@@ -195,9 +195,21 @@ def fire(tn, title, subtitle, message, url, sound):
         return False
 
 
+def report_url_from_path(path):
+    """Pre uz hotovy HTML/URL report: ak je to existujuci subor, vrat file://abs;
+    ak vyzera ako URL (http/file), vrat ho tak. Inak None."""
+    if not path:
+        return None
+    if path.startswith(("http://", "https://", "file://")):
+        return path
+    if os.path.exists(path):
+        return "file://" + os.path.abspath(path)
+    return None
+
+
 def parse_args(argv):
     opts = {"title": "Zolander", "subtitle": "", "message": "",
-            "report": "", "sound": ""}
+            "report": "", "report_url": "", "sound": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -223,7 +235,17 @@ def main():
         log("terminal-notifier nenajdene -> preskocene (len inbox/push cez zolander_notify)")
         return 0
 
-    url = build_report(opts["report"], opts["title"]) if opts["report"] else None
+    # Report na klik: uprednostni uz hotove HTML/URL (--report-url alebo --report
+    # co je HTML/existujuci subor), inak sprav md->html z .md.
+    url = None
+    if opts.get("report_url"):
+        url = report_url_from_path(opts["report_url"])
+    if not url and opts["report"]:
+        rp = opts["report"]
+        if rp.startswith(("http://", "https://", "file://")) or rp.lower().endswith((".html", ".htm")):
+            url = report_url_from_path(rp)
+        else:
+            url = build_report(rp, opts["title"])
     fire(tn, opts["title"], opts["subtitle"], opts["message"], url, opts["sound"])
     return 0
 
