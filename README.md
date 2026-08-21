@@ -161,7 +161,7 @@ mood**.
 Hermes exposes shell hooks (configured under `hooks:` in `~/.hermes/config.yaml`,
 allowlisted once via `hermes hooks doctor` / `--accept-hooks`). A hook is an external
 command Hermes runs at a fixed point in the loop, reading a JSON event on stdin and
-optionally returning JSON on stdout. Zolander uses two:
+optionally returning JSON on stdout. Zolander uses these:
 
 - **`hook_recall.py` (event: `pre_llm_call`).** Fires before the model is called and
   can inject `{"context": "..."}` into the *user* message. On the first turn of a
@@ -183,7 +183,25 @@ optionally returning JSON on stdout. Zolander uses two:
   nudging, so a genuinely stuck fix is never trapped in a loop). It only checks the
   mechanically-decidable ("does it parse?") — it deliberately does **not** try to police
   semantic claims like "this is thread-safe", because those *can't* be verified by code
-  and pretending otherwise would be its own hallucination.
+  and pretending otherwise would be its own hallucination. A second, **opt-in** layer
+  (`ZOL_VERIFY_MOA`) adds a cross-model review: once the changed files parse, two models
+  that did *not* write them (via `zol_eval`, MIN aggregation) score the edited `.md`/code
+  for AI-slop, sycophancy and obvious holes — a mechanical author≠reviewer gate, bounded
+  and fail-open, that never blocks on the judge being unavailable.
+
+- **`hook_skill_matcher.py` (event: `pre_llm_call`).** A deterministic skill *navigator*.
+  Skill selection by the model is probabilistic (it pattern-matches over a list of
+  descriptions and can miss a relevant skill, especially when the user frames the task as
+  "general"). This hook mechanically scans the frontmatter of **every** installed skill
+  (keyword overlap + a curated trigger map that bridges cross-language: the user writes in
+  one language, skill descriptions are often in English) and injects a *"consider skill
+  X, Y"* note into the user message. Since skills became **menus** (thin `SKILL.md` +
+  `references/*.md` loaded on demand), it also indexes the reference files (name + one-line
+  INDEX description) and suggests the concrete `skill / references/X.md` to load via
+  `skill_view` — closing the discovery gap where the long tail of references is otherwise
+  invisible to the resident prompt. No LLM, near-zero token cost, cache-keyed by newest
+  `SKILL.md` mtime, stamp-guarded once-per-message, fail-open. It is a *suggestion, not a
+  command* — the model still judges relevance before loading anything.
 
 The split is the whole point: **data injection and mechanical verification belong in
 hooks (hard); judgement and style stay in the skill (soft).** Don't try to turn every
@@ -199,9 +217,11 @@ hooks:
   pre_llm_call:
     - command: /usr/bin/python3 /path/to/toolkit/hook_recall.py
       timeout: 100
+    - command: /usr/bin/python3 /path/to/toolkit/hook_skill_matcher.py
+      timeout: 15
   pre_verify:
     - command: /usr/bin/python3 /path/to/toolkit/hook_verify.py
-      timeout: 30
+      timeout: 100
 ```
 
 ### Desktop notifications — being told away from the terminal
