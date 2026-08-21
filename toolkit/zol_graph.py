@@ -76,6 +76,96 @@ def link(a, b, edge, meta=None):
     return e
 
 
+def _rewrite_edges(edges):
+    """Atomicky prepis CELY EDGES subor (rewrite, nie append). Pouziva sa pri
+    reparent - bezne je EDGES append-only, ale presmerovanie/zmazanie hran si
+    vynuti prepis. tmp + os.replace = atomicke, flock proti subeznemu zapisu."""
+    os.makedirs(STATE, exist_ok=True)
+    tmp = EDGES + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        for e in edges:
+            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+        fcntl.flock(f, fcntl.LOCK_UN)
+    os.replace(tmp, EDGES)
+
+
+def reparent(dead_id, keeper_id):
+    """Pred zmazanim dead_id z grafu presmeruj VSETKY jeho hrany na keeper_id,
+    aby deti (parent hrany mieriace na dead_id) NEOSIRELI. Zahodi vznikle
+    self-loopy (napr. keeper<->dead related) a duplikaty (hrana co uz existuje).
+    Idempotentne: druhe spustenie s uz neexistujucim dead_id vrati migrated=0.
+    Vracia {dead, keeper, migrated, dropped_selfloop, dropped_dup, dropped_cycle, edges_after}."""
+    if dead_id == keeper_id:
+        # NO-OP: nahradenie dead->dead by vsetky hrany zmenilo na self-loop = tichy
+        # vygum grafu. Toto je vzdy chyba volajuceho, nie legitimny merge.
+        return {"dead": dead_id, "keeper": keeper_id, "migrated": 0,
+                "dropped_selfloop": 0, "dropped_dup": 0, "dropped_cycle": 0,
+                "edges_after": len(_read(EDGES)), "noop": "dead==keeper"}
+    edges = _read(EDGES)
+    out = []
+    seen = set()          # (from,to,edge) - dedup vratane uz existujucich keeper hran
+    migrated = dropped_self = dropped_dup = dropped_cycle = 0
+    # parent adjacencia BEZ hran zmazaneho uzla (na detekciu cyklu po prevesani).
+    # Keeper mohol byt (nepriamy) potomok dead -> prevesenie by vyrobilo slucku.
+    parent_adj = {}
+    for e in edges:
+        if e.get("edge") == "parent" and dead_id not in (e.get("from"), e.get("to")):
+            parent_adj.setdefault(e["from"], set()).add(e["to"])
+
+    def _reaches(src, dst):
+        """Da sa z src dojst do dst po parent hranach? (DFS, cyklu-bezpecny)"""
+        stack, seen_r = [src], set()
+        while stack:
+            x = stack.pop()
+            if x == dst:
+                return True
+            if x in seen_r:
+                continue
+            seen_r.add(x)
+            stack.extend(parent_adj.get(x, ()))
+        return False
+
+    # najprv nazbieraj hrany co sa dead_id NETYKAJU (nech reparent nevytvori duplikat)
+    for e in edges:
+        if e.get("from") != dead_id and e.get("to") != dead_id:
+            seen.add((e.get("from"), e.get("to"), e.get("edge")))
+    for e in edges:
+        frm, to = e.get("from"), e.get("to")
+        if frm != dead_id and to != dead_id:
+            out.append(e)                      # netyka sa dead_id -> nechaj
+            continue
+        ne = dict(e)                            # hrana sa dotyka dead_id -> presmeruj
+        if ne.get("from") == dead_id:
+            ne["from"] = keeper_id
+        if ne.get("to") == dead_id:
+            ne["to"] = keeper_id
+        if ne["from"] == ne["to"]:
+            dropped_self += 1
+            continue                            # self-loop -> zahod
+        key = (ne["from"], ne["to"], ne.get("edge"))
+        if key in seen:
+            dropped_dup += 1
+            continue                            # ekvivalentna hrana uz existuje
+        # cyklus-guard LEN pre parent: ak by nova parent hrana from->to vytvorila
+        # slucku (z to sa uz da dojst do from), zahod ju — hierarchia musi ostat acyklicka.
+        if ne.get("edge") == "parent" and _reaches(ne["to"], ne["from"]):
+            dropped_cycle += 1
+            continue
+        seen.add(key)
+        if ne.get("edge") == "parent":
+            parent_adj.setdefault(ne["from"], set()).add(ne["to"])
+        ne["meta"] = {**(ne.get("meta") or {}), "reparented_from": dead_id}
+        out.append(ne)
+        migrated += 1
+    _rewrite_edges(out)
+    return {"dead": dead_id, "keeper": keeper_id, "migrated": migrated,
+            "dropped_selfloop": dropped_self, "dropped_dup": dropped_dup,
+            "dropped_cycle": dropped_cycle, "edges_after": len(out)}
+
+
 def _set_temporal(mid, **fields):
     """Append temporalny zapis (posledny vyhrava pri citani)."""
     rec = {"id": mid, "ts": _now()}
@@ -226,6 +316,8 @@ def main():
         print(json.dumps(link(int(a[1]), int(a[3]), a[2]), ensure_ascii=False))
     elif cmd == "supersede" and len(a) >= 3:
         print(json.dumps(supersede(int(a[1]), int(a[2])), ensure_ascii=False))
+    elif cmd == "reparent" and len(a) >= 3:
+        print(json.dumps(reparent(int(a[1]), int(a[2])), ensure_ascii=False))
     elif cmd == "neighbors" and len(a) >= 2:
         print(json.dumps(neighbors(int(a[1]), a[2] if len(a) > 2 else None),
                          ensure_ascii=False, indent=2))

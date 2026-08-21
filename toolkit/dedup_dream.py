@@ -184,6 +184,16 @@ def dedup(model="opus", dry_run=False, log_fn=None):
             # del PRV, trash az po uspesnom zmazani (inak by trash mal zaznam co
             # v DB ostal = false recovery). Poradie: over zmazanie -> potom stopa.
             if _del_point(m["id"]):
+                # NAJPRV presmeruj hrany zmazaneho na keepera (deti NEOSIRIA),
+                # az POTOM trash. reparent je fail-open: chyba grafu nezhodi merge.
+                try:
+                    import zol_graph
+                    rp = zol_graph.reparent(m["id"], kid)
+                    _log(f"reparent {m['id']}->{kid}: migrated={rp['migrated']} "
+                         f"selfloop={rp['dropped_selfloop']} dup={rp['dropped_dup']}")
+                    merge["reparent"] = rp
+                except Exception as e:
+                    _log(f"reparent {m['id']}->{kid} ZLYHAL (hrany ostali): {e!r}")
                 _trash(m, reason, kid)
                 removed.add(m["id"])
                 merges.append(merge)
