@@ -45,7 +45,7 @@ from zol_paths import NODE, HS, NODE_ENV, ZROOT  # prenositelne cesty (auto-dete
 STATE = os.path.join(ZROOT, "state")
 IDFILE = os.path.join(STATE, "mem_next_id.txt")
 
-# PROMPT-INJECTION KARANTENA recall obsahu (2026-08, A2A peer provider lekcia).
+# PROMPT-INJECTION KARANTENA recall obsahu (2026-08, A2A peer lekcia).
 # Recall obsah sa cez hook vklada priamo do kontextu LLM. Ak sa do pamate dostane
 # zaznam co VYZERA ako instrukcia (napr. cez writeback z WhatsApp/cudzieho vstupu),
 # mohol by sa "vykonat". Preto pred vratenim recall vysledku kazdy text preveríme:
@@ -310,7 +310,7 @@ def cmd_recall():
     # obj["no_lexical"]=true alebo env ZOL_RECALL_LEXICAL=0.
     vec = embed_one(query)
     fetch = topk * 4  # vytiahni sirsie, po zluceni + filtri orez na topk
-    # FAIL-CLOSED (2026-08, A2A peer provider lekcia): backend pad NESMIE vyzerat
+    # FAIL-CLOSED (2026-08, A2A peer lekcia): backend pad NESMIE vyzerat
     # ako "0 spomienok". Ked search RuntimeError (DB down/unreachable), NEvrat ticho
     # prazdny zoznam — vrat explicitny backend_error objekt, nech volajuci (dream,
     # writeback, initiative, priamy recall) vie ROZLISIT "naozaj nic" od "DB je dole"
