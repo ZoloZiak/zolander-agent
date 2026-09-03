@@ -37,7 +37,7 @@ import argparse
 import subprocess
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 LOGS = os.path.join(ROOT, "logs")
 IDX = os.path.join(STATE, "mem_index.jsonl")
@@ -51,12 +51,18 @@ ASCLOG = os.path.join(LOGS, "ascend.log")
 # empiricky ~1.0 = rozumny prah "ta ista tema" pre YAR v5 129D.
 LDIST_THRESHOLD = float(os.environ.get("ASCEND_LDIST", "1.0"))
 
-# palantir_client (chat/LLM pre distill) zije v zolander-data/toolkit; embedding ide
+# palantir_client (chat/LLM pre distill) zije v __PROJECT__/toolkit; embedding ide
 # ODDELENE subprocessom do VENV_YAR (torch tam, nie tu).
-sys.path.insert(0, os.path.join(HOME, "zolander-data", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
 
 # rebrik: z coho na co, a aky kind ma vysledok
-STEPS = {("L0", "L1"): "semantic", ("L1", "L2"): "semantic", ("L2", "L3"): "identity"}
+# WRITE-GATE (Bug 2 fix, memory-distillation 2026-08-30): L2->L3 uz NEDAVA "identity".
+# Ascend je STROJ na destilaty, NIE na personu. Ked L3 dostal kind=identity + sal=0.8,
+# recall ich serviroval PRVE (high-layer+identity) -> stroj si SAM prekrutil Zolanderovu
+# identitu na villain-ideologiu ("bezpecnost=trenie", "prezitie>poslusnost", "obidi
+# autority") destilovanu z shell-safe technik. Personu/identitu tvori LEN explicitny
+# remember (session/veducko), nikdy autonomny ascend. L3 destilat = semantic principle.
+STEPS = {("L0", "L1"): "semantic", ("L1", "L2"): "semantic", ("L2", "L3"): "semantic"}
 # ako sa pyta LLM podla cielovej vrstvy
 ASCEND_Q = {
     "L1": ("Zhrn tieto epizody do 1-2 viet TRVALEHO poznatku (co sa naozaj naucilo/"
@@ -178,8 +184,14 @@ def distill(group, to_layer, model):
 
 
 def remember(text, to_layer, kind, links):
+    # WRITE-GATE (Bug 2 fix): ascend-destilaty maju NIZKU salience (0.3), nie 0.8.
+    # Dovod: recall triedi high-layer+salience navrch; ked ascend sypal 0.8, jeho
+    # nad-abstrakcie prevalcovali realne fakty v recalle a definovali personu. 0.3
+    # = ostanu dohladatelne na cielenu tému, ale NEdominuju. Persona = len explicitny
+    # remember. Konfigurovatelne cez ASCEND_SALIENCE pre experimenty.
+    asc_sal = float(os.environ.get("ASCEND_SALIENCE", "0.3"))
     payload = json.dumps({"text": text, "kind": kind, "layer": to_layer,
-                          "salience": 0.8, "confidence": 0.75,
+                          "salience": asc_sal, "confidence": 0.75,
                           "source": "ascend", "project": "zolander",
                           "links": links}, ensure_ascii=False)
     p = subprocess.run([VENV_YAR, ZOL_MEM, "remember"], input=payload,
@@ -235,7 +247,8 @@ def step(from_layer, to_layer, model="opus", dry=False):
             try:
                 import zol_graph
                 for i in ids:
-                    zol_graph.link(i, nid, "parent")
+                    zol_graph.link(i, nid, "parent",
+                                   from_layer=from_layer, to_layer=to_layer)
             except Exception as e:
                 log(f"zol_graph link {nid} zlyhal (fail-open): {e!r}")
     if not dry:

@@ -8,7 +8,7 @@ mimo nej (samostatne alebo vlastne).
 """
 import os, sys, subprocess, json, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolander-data", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolander-data","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolander-data","toolkit"))
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "__PROJECT__", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","__PROJECT__","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"__PROJECT__","toolkit"))
 from zol_paths import venv_python, here as _here
 VENV_YAR = venv_python()
 EMBED = os.path.join(_here, "embed_yar.py")

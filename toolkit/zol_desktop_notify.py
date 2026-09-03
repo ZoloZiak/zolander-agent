@@ -20,7 +20,7 @@ import datetime
 import subprocess
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 LOGS = os.path.join(ROOT, "logs")
 REPORTS = os.path.join(STATE, "reports")

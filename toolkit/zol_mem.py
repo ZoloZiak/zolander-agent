@@ -72,6 +72,81 @@ def _looks_like_injection(text):
     sample = text[:20_000]
     return any(p.search(sample) for p in _INJECTION_PATTERNS)
 
+
+# ── OWNERSHIP HMAC (bod A, 2026-08, prevzate z example-org/peer-provider) ──
+# Problem: recall bral memory_type/source z meta BEZ overenia. Writeback z WhatsApp/
+# cudzieho vstupu mohol ulozit zaznam ako 'identity' a recall ho bral ako jadro.
+# Riesenie (full model, presne ako jej _mutations.py): DVE nezavisle polia v meta:
+#   _hs_digest  = SHA256 nad OBSAHOM (kind|memory_type|source|text) — deteguje zmenu obsahu
+#   _hs_sig     = HMAC-SHA256 nad VLASTNICKYMI poliami (owner|kind|memory_type|source|_hs_digest)
+#                 klucom zo ZOL_MEM_HMAC_KEY — dokazuje "toto zapisal legitimny remember", nie model.
+# Kluc ZIJE v ~/.hermes/.env (ZOL_MEM_HMAC_KEY), NIE v repe. Bez kluca: fail-open pri
+# remember (podpis sa nepridá, zaznam sa ulozi) — HMAC je vrstva navyse, nie tvrda brana
+# zapisu (na rozdiel od jej trust_mode=owned_only). Recall: nepodpisane/legacy = verified:False,
+# NEODMIETA sa (inak by cela stara pamat zmizla).
+import hashlib as _hashlib
+import hmac as _hmac
+
+_HS_OWNER = "zol_mem"          # kto vlastni zapis (analog jej _PLUGIN_ID)
+_HS_SCHEMA = "1"               # verzia podpisovej schemy
+# doladenie recall vyuzitia verified (2026-08): jemny boost overenych + [neoverene]
+# marker pri citlivych typoch. Boost zamerne maly (poradie riadi hlavne relevance).
+HMAC_VERIFIED_BOOST = float(os.environ.get("ZOL_HMAC_BOOST", "1.05"))
+_SENSITIVE_KINDS = ("identity", "procedural")  # kde falosna provenance najviac skodi
+
+
+def _hmac_key():
+    """Kluc zo ZOL_MEM_HMAC_KEY (env alebo ~/.hermes/.env). None ak chyba (fail-open)."""
+    k = os.environ.get("ZOL_MEM_HMAC_KEY")
+    if k:
+        return k.encode("utf-8")
+    envf = os.path.join(HOME, ".hermes", ".env")
+    try:
+        with open(envf, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("ZOL_MEM_HMAC_KEY=") and "=" in line:
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if val:
+                        return val.encode("utf-8")
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _content_digest(kind, memory_type, source, text):
+    """SHA256 nad obsahom (analog jej logical_digest). Deteguje zmenu obsahu."""
+    parts = [_HS_OWNER, _HS_SCHEMA, str(kind), str(memory_type),
+             str(source), str(text)]
+    return _hashlib.sha256("\0".join(parts).encode("utf-8", "replace")).hexdigest()
+
+
+def _ownership_sig(owner, kind, memory_type, source, digest, key):
+    """HMAC-SHA256 nad vlastnickymi poliami (analog jej ownership_signature)."""
+    if not key:
+        return None
+    payload = "\x1f".join(str(x) for x in
+                          (owner, kind, memory_type, source, digest)).encode("utf-8")
+    return _hmac.new(key, payload, _hashlib.sha256).hexdigest()
+
+
+def _verify_ownership(meta, key):
+    """True ak meta nesie platny digest AJ podpis (constant-time). False = legacy/sfalsovane."""
+    digest = str(meta.get("_hs_digest") or "")
+    sig = str(meta.get("_hs_sig") or "")
+    if not digest or not sig or not key:
+        return False
+    expected_digest = _content_digest(
+        meta.get("kind"), meta.get("memory_type"),
+        meta.get("source"), meta.get("text"))
+    if not _hmac.compare_digest(digest, expected_digest):
+        return False
+    expected_sig = _ownership_sig(
+        meta.get("_hs_owner"), meta.get("kind"), meta.get("memory_type"),
+        meta.get("source"), digest, key)
+    return bool(expected_sig) and _hmac.compare_digest(sig, expected_sig)
+
+
 DIM = 129
 METRIC = "lorentz"
 # MIGRACIA 4->1 (2026-08-08): jedna kolekcia, druh pamate ide do meta memory_type.
@@ -104,6 +179,8 @@ KIND_BASE = {"identity": 0.9, "procedural": 0.8, "semantic": 0.7, "episodic": 0.
 # forget navrh: LEN episodic, starsie ako N dni a pod prahom salience
 FORGET_MIN_AGE_DAYS = float(os.environ.get("ZOL_FORGET_MIN_AGE", "14"))
 FORGET_SALIENCE = float(os.environ.get("ZOL_FORGET_SALIENCE", "0.12"))
+RETIRE_MIN_AGE_DAYS = float(os.environ.get("ZOL_RETIRE_MIN_AGE", "60"))
+RETIRE_SALIENCE = float(os.environ.get("ZOL_RETIRE_SALIENCE", "0.05"))
 
 # YAR embedder (natívny 129D Lorentz) — import z rovnakého toolkitu
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -157,6 +234,24 @@ def cmd_remember():
     links = obj.get("links", "")
     ts = obj.get("ts") or time.strftime("%Y-%m-%dT%H:%M:%S")
 
+    # --- SCAFFOLDING ZÁMOK ZÁPISU (spike 010 VALIDATED, Neuromancer pravidlo) ---
+    # Odvodený (deductive) záznam MUSÍ niesť dohľadateľné premisy vyššej/rovnej
+    # istoty, inak sa NEZAPÍŠE (to je liek na "abstrakčný engine generoval vatu").
+    # Explicit (doslovný) prejde vždy — spätná kompatibilita. Aktívne s kill-switchom
+    # ZOL_SCAFFOLD_GATE=0. Deterministické, žiaden LLM na horúcej ceste.
+    try:
+        import scaffold_gate
+        _idx = _graph_index_by_id()
+        _resolve = lambda _pid: _idx.get(_pid)  # noqa: E731  ground truth z mem_index
+        _dec, _why = scaffold_gate.evaluate(obj, _resolve)
+        if _dec != scaffold_gate.ACCEPT:
+            print(json.dumps({"refused_scaffold": _why,
+                              "certainty": obj.get("certainty", "explicit"),
+                              "text": text[:80]}, ensure_ascii=False))
+            return
+    except ImportError:
+        pass  # fail-open: ak modul chýba, zápis nikdy nezhodíme kvôli gate
+
     mid = obj.get("id") or next_id()
     vec = embed_one(text)  # natívny 129D Lorentz
     col = col_for(kind)
@@ -194,39 +289,29 @@ def cmd_remember():
         "confidence": round(confidence, 3), "source": source,
         "project": project, "ts": ts, "links": links,
         "text": text[:300],
+        # Epistemická os (spike 010): certainty + premisy sa PERSISTUJÚ, aby
+        # scaffolding fungoval reťazovo — budúci deduktívny záznam vidí istotu
+        # svojej premisy. Chýbajúce certainty = explicit (spätná kompatibilita).
+        "certainty": (obj.get("certainty") or "explicit").strip().lower(),
+        "premises": obj.get("premises") or [],
     }
-    rec = json.dumps({"id": mid, "vector": vec, "meta": meta}, ensure_ascii=False) + "\n"
-    hs("insert", col, stdin=rec)
-
-    # DUAL-WRITE do Gemma cosine kolekcie (3. lens). FAIL-OPEN: ak daemon nebezi,
-    # zaznam sa aj tak ulozi do Lorentz+index, len chyba v Gemma indexe (dobehne
-    # backfill neskor). Vypnutelne env ZOL_RECALL_GEMMA=0.
-    gvec = None  # nechame si Gemma vektor pre priebezne 'related' hrany (B nizsie)
-    if os.environ.get("ZOL_RECALL_GEMMA", "1") != "0":
-        try:
-            import urllib.request
-            port = os.environ.get("GEMMA_EMBED_PORT", "8901")
-            body = json.dumps({"texts": [text], "mode": "document"}).encode()
-            req = urllib.request.Request(f"http://127.0.0.1:{port}/embed", data=body,
-                                         headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                gvec = json.loads(r.read())["vectors"][0]
-            grec = json.dumps({"id": mid, "vector": gvec,
-                               "meta": {"kind": kind, "layer": layer, "text": text[:300]}},
-                              ensure_ascii=False) + "\n"
-            hs("insert", "zol_mem_gemma", stdin=grec)
-        except Exception:
-            gvec = None
-            pass  # fail-open: Gemma index dobehne backfillom
-
-    # lokálny index pre decay/konsolidáciu + BM25 korpus (DB nemá hromadný listing)
-    # base_salience = zafixovana povodna hodnota pre IDEMPOTENTNY decay (v2).
-    # text[:300] (nie 120) — BM25 aj LLM re-rank potrebuju cely zmysel, nie utrzok.
-    with open(os.path.join(STATE, "mem_index.jsonl"), "a") as f:
-        f.write(json.dumps({"id": mid, "col": col, "kind": kind, "layer": layer,
-                            "salience": salience, "base_salience": round(salience, 3),
-                            "confidence": confidence,
-                            "ts": ts, "text": text[:300]}, ensure_ascii=False) + "\n")
+    # OWNERSHIP HMAC (bod A): podpis nad obsahom + vlastnickymi poliami. Fail-open:
+    # ak kluc chyba, zaznam sa ulozi bez podpisu (recall ho oznaci verified:False).
+    # POZOR: digest/sig sa rataju z meta['text'] (uz orezaneho na 300), nie z povodneho
+    # 'text' — inak by recall (co vidi len [:300]) digest nikdy nepotvrdil.
+    _key = _hmac_key()
+    if _key:
+        _dig = _content_digest(kind, kind, source, meta["text"])
+        meta["_hs_owner"] = _HS_OWNER
+        meta["_hs_digest"] = _dig
+        meta["_hs_sig"] = _ownership_sig(_HS_OWNER, kind, kind, source, _dig, _key)
+    # --- ZÁPIS CEZ CHOKEPOINT (mem_store.put) ---
+    # Jedna vrstva robi lorentz + gemma + index SPOLU, s del-pred-insert (prebije
+    # soft-delete tombstone) a repair frontou namiesto ticheho `except: pass`.
+    # Tak sa uz kolekcie nikdy nerozidu potichu. gvec vraciame pre 'related' hrany.
+    import mem_store
+    _res = mem_store.put(mid, text, meta, vec=vec, append_index=True)
+    gvec = _res.get("gvec")  # Gemma 768D (None ak daemon nebezal -> repair fronta to dobehne)
     # MEM0 UPDATE: ak novy zaznam nahradil salientnejsi near-duplikat, superseduj stary
     # (bitemporal valid_until + supersedes hrana). Fail-open. Rani sa az PO ulozeni noveho.
     superseded = None
@@ -297,10 +382,277 @@ def _gemma_query(query, fetch):
         return []  # fail-open
 
 
+def _filter_active_records(records, include_inactive=False, active_fn=None):
+    """StateMem current-state filter: superseded záznamy neinjektuj defaultne.
+
+    Bitemporálne fakty ostávajú dohľadateľné, ale recall má bežne vracať aktuálny
+    stav. Historické/neplatné záznamy pustí len explicitné include_inactive=True.
+    Fail-open: ak temporal sidecar nejde načítať, nechaj kandidátov tak — horšie je
+    ticho stratiť pamäť pre chybu v grafe.
+    """
+    if include_inactive:
+        keep_inactive = True
+    else:
+        keep_inactive = False
+    if active_fn is None:
+        try:
+            import zol_graph
+            active_fn = zol_graph.is_active
+        except Exception:
+            return records
+    out = []
+    for r in records:
+        mid = r.get("id")
+        try:
+            active, info = active_fn(mid)
+        except Exception:
+            out.append(r)
+            continue
+        nr = dict(r)
+        nr["active"] = bool(active)
+        if info is not None:
+            nr["_temporal"] = info
+        if active or keep_inactive:
+            out.append(nr)
+    return out
+
+
+def _apply_query_route(candidates, query, obj, temporal_state=None,
+                       index=None, subtree_fn=None, children_fn=None):
+    """ŽL4 router → ŽL5 when_gate (temporal) + ŽL3 subtree (aggregate) v recall.
+
+    Router (LLM-free, lacný) beží VŽDY a klasifikuje typ dotazu. Akcie sú AKTÍVNE
+    default — router/when_gate/subtree neboli dokázané škodlivé (na rozdiel od
+    graph_expand, kde spike 007 ukázal ΔMRR<0, preto ostáva opt-in). Kill-switch:
+    obj['route_disable']=True → router klasifikuje (info), ale žiadna akcia sa
+    neaplikuje. Fail-open: akákoľvek chyba → pôvodní kandidáti nedotknutí.
+
+    Returns: (candidates_out, info) kde info = {route, reason, confidence,
+    applied, action?}.
+    """
+    try:
+        import query_router as _qr
+    except Exception:
+        return list(candidates), {"route": "point", "applied": False,
+                                  "reason": "router import zlyhal"}
+    try:
+        decision = _qr.query_router(query)
+    except Exception:
+        return list(candidates), {"route": "point", "applied": False,
+                                  "reason": "router beh zlyhal"}
+
+    route = decision.get("route", "point")
+    info = {"route": route, "reason": decision.get("reason"),
+            "confidence": decision.get("confidence"), "applied": False}
+
+    # kill-switch — router klasifikuje, akcie sa nevykonajú
+    if obj.get("route_disable"):
+        return list(candidates), info
+
+    out = list(candidates)
+    if route == "temporal":
+        try:
+            import when_gate as _wg
+            out = _wg.when_gate(out, temporal_state or {}, route=route)
+            info["applied"] = True
+            info["action"] = "when_gate"
+            info["dropped"] = len(candidates) - len(out)
+        except Exception:
+            return list(candidates), info
+    elif route == "aggregate":
+        try:
+            import subtree_expand as _se
+            out = _se.expand_subtree_candidates(
+                out, route=route, index=index or {},
+                subtree_fn=subtree_fn, children_fn=children_fn)
+            info["applied"] = True
+            info["action"] = "subtree_expand"
+            info["added"] = len(out) - len(candidates)
+        except Exception:
+            return list(candidates), info
+    # relation → graph traversal je budúca práca (spike 007 INVALIDATED PPR expand);
+    # point → flat recall (žiadna akcia). Oba passthrough.
+    return out, info
+
+
+def _hit_counts_from_events(path=None, event_name="recall_hits"):
+    """Spočítaj {mem_id: pocet_hitov} z recall_hits telemetrie v events.jsonl.
+
+    Telemetria (_emit_recall_hits) loguje 'ids' (list) na každý recall. Bump sa
+    kalibruje na tom, čo sa REÁLNE recalluje, nie na dohadoch. Fail-open: chýbajúci
+    súbor / rozbitý riadok → prázdny dict (→ bump gate vráti NOT_READY).
+    """
+    ev_path = path or os.path.join(STATE, "events.jsonl")
+    counts = {}
+    if not os.path.exists(ev_path):
+        return counts
+    try:
+        with open(ev_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if r.get("event") != event_name:
+                    continue
+                for mid in (r.get("data", {}) or {}).get("ids", []) or []:
+                    counts[mid] = counts.get(mid, 0) + 1
+    except Exception:
+        return {}
+    return counts
+
+
+def _apply_salience_bump(rows, hit_counts):
+    """WMT salience bump (2608.20631) s vstavaným ŽL6 readiness gate.
+
+    Bump len keď salience_bump.compute() povie ready=True (dosť telemetrie, dosť
+    rôznych úrovní). Inak (dnešný reálny stav: pririedke pokrytie) NOT_READY a
+    salience ostáva NEZMENENÁ — väzenie v kóde, nie sľub. base_salience sa NIKDY
+    neprepíše (idempotencia decay ostáva). Salience capovaná na 1.0.
+
+    Returns: (rows, audit) kde audit = výstup compute() (verdict/coverage/...).
+    """
+    try:
+        import salience_bump as _sb
+    except Exception:
+        return rows, {"verdict": "NOT_READY", "reason": "salience_bump import zlyhal",
+                      "ready": False, "applied": {}}
+    try:
+        audit = _sb.compute(hit_counts or {}, len(rows))
+    except Exception:
+        return rows, {"verdict": "NOT_READY", "reason": "compute zlyhal",
+                      "ready": False, "applied": {}}
+    if not audit.get("ready"):
+        return rows, audit  # gate drží → salience nedotknutá
+    applied = audit.get("applied", {}) or {}
+    for r in rows:
+        mid = r.get("id")
+        bump = applied.get(mid)
+        if bump:
+            r["salience"] = round(min(1.0, float(r.get("salience", 0.0)) + float(bump)), 3)
+    return rows, audit
+
+
+def _graph_index_by_id(path=None):
+    """Lokálny id->index riadok pre opt-in graph recall expansion."""
+    idx_path = path or os.path.join(STATE, "mem_index.jsonl")
+    out = {}
+    try:
+        with open(idx_path, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                mid = row.get("id")
+                if mid is not None:
+                    out[mid] = row
+    except Exception:
+        return {}
+    return out
+
+
+def _expand_graph_candidates(records, index=None, neighbor_fn=None, max_seeds=3,
+                             max_neighbors=2, hop_decay=0.55):
+    """Opt-in RippleMem/GraphMemix: top recall hity rozšír o related susedov.
+
+    Produkčný recall ostáva defaultne plochý. Keď volajúci požiada o graph_expand,
+    berieme top seed kandidátov ako cues a pridáme ich `related` susedov z pamäťového
+    grafu ako nižšie skórované evidence kandidáty. Je to dôkazový les, nie nový fakt:
+    každý pridaný záznam nesie `graph_expanded` + `seed_id` audit stopu.
+    """
+    if not records:
+        return records
+    try:
+        max_seeds = max(0, int(max_seeds))
+        max_neighbors = max(0, int(max_neighbors))
+        hop_decay = float(hop_decay)
+    except Exception:
+        max_seeds, max_neighbors, hop_decay = 3, 2, 0.55
+    if max_seeds <= 0 or max_neighbors <= 0:
+        return records
+    if index is None:
+        index = _graph_index_by_id()
+    if neighbor_fn is None:
+        try:
+            import zol_graph
+            neighbor_fn = zol_graph.neighbors
+        except Exception:
+            return records
+    expanded = list(records)
+    seen = {r.get("id") for r in expanded}
+    for seed in records[:max_seeds]:
+        sid = seed.get("id")
+        if sid is None:
+            continue
+        try:
+            edges = neighbor_fn(sid, "related") or []
+        except Exception:
+            continue
+        added = 0
+        seed_score = float(seed.get("score", 0.0) or 0.0)
+        for e in edges:
+            nid = e.get("to") if e.get("from") == sid else e.get("from")
+            if nid is None or nid == sid or nid in seen:
+                continue
+            doc = index.get(nid)
+            if not doc:
+                continue
+            meta = {
+                "text": doc.get("text", ""),
+                "kind": doc.get("kind"),
+                "memory_type": doc.get("memory_type") or doc.get("kind"),
+                "layer": doc.get("layer"),
+                "ts": doc.get("ts"),
+                "source": doc.get("source"),
+            }
+            cand = {
+                "id": nid,
+                "col": MEM_COL,
+                "meta": meta,
+                "distance": None,
+                "score": round(seed_score * hop_decay, 4),
+                "graph_expanded": True,
+                "seed_id": sid,
+                "edge": "related",
+            }
+            expanded.append(cand)
+            seen.add(nid)
+            added += 1
+            if added >= max_neighbors:
+                break
+    return expanded
+
+
+def _emit_recall_hits(query, results, opts=None):
+    """Read-only telemetry pre Weighted Memory Tree: loguj použité IDs, nie raw query."""
+    try:
+        from zol_events import emit
+        qhash = _hashlib.sha256((query or "").encode("utf-8", "replace")).hexdigest()[:16]
+        ids = [r.get("id") for r in results if r.get("id") is not None]
+        data = {"query_hash": qhash, "ids": ids, "n": len(ids)}
+        if opts:
+            data.update(opts)
+        emit("memory", "recall_hits", data)
+    except Exception:
+        pass
+
+
+def _finalize_recall_results(query, cand, topk, opts=None):
+    results = cand[:topk]
+    _emit_recall_hits(query, results, opts=opts)
+    return results
+
+
 def cmd_recall():
     obj = json.loads(sys.stdin.read())
     query = obj["query"]
     topk = int(obj.get("topk", 5))
+    # spike 012: KTO volá recall (hook/daemon/eval/interactive) — audit musí vedieť
+    # odlíšiť človeka od stroja bez hashovacích hier. Default 'adhoc' nech pole vždy existuje.
+    source = obj.get("source", "adhoc")
     kind = obj.get("kind")  # None => všetky typy; inak filter memory_type
     # HYBRID (2026-08): YAR semantic + BM25 lexikalna poistka, zlucene cez RRF.
     # Dovod: YAR 129D Lorentz je slaby na parafrazu (~52%) -> fakt co v pamati JE
@@ -410,6 +762,7 @@ def cmd_recall():
 
     ordered = sorted(fused_score.items(), key=lambda kv: -kv[1])
     # najprv aplikuj kind filter, potom priprav kandidatov
+    _vkey = _hmac_key()  # OWNERSHIP HMAC kluc raz pred sluckou (bod A)
     cand = []
     for mid, fused in ordered:
         r = meta_by_id.get(mid)
@@ -427,6 +780,16 @@ def cmd_recall():
             r["_relevance"] = round(fused, 4)
         else:
             r["score"] = round(fused, 4)
+        # OWNERSHIP HMAC overenie (bod A): PRED karantenou (tá prepisuje m['text']
+        # a zrusila by digest). verified=True len ak digest+podpis sedia constant-time.
+        # Nepodpisane/legacy/sfalsovane = verified:False (NEODMIETA sa — legacy pamat ostava).
+        r["verified"] = _verify_ownership(m, _vkey)
+        # JEMNY BOOST overenych spomienok (2026-08, doladenie): overena provenance
+        # dostane maly bonus k skore (nezmeni recall drasticky, len mierne uprednostni
+        # dôveryhodne). LEN ked existuje HMAC kluc — inak by na legacy pamati (0 podpisov)
+        # nemal co boostovat a len by pridal sum. Neoverene ostavaju na povodnom skore.
+        if _vkey and r["verified"]:
+            r["score"] = round(r.get("score", 0) * HMAC_VERIFIED_BOOST, 4)
         # PROMPT-INJECTION KARANTENA: ak spomienka VYZERA ako instrukcia, obsah
         # NEvrat doslovne (nech sa nevlozi do kontextu ako vykonatelny prikaz).
         # Nahrad markerom + priznak; fakt zostava dohladatelny cez id v DB, ale
@@ -434,10 +797,56 @@ def cmd_recall():
         if _looks_like_injection((m.get("text") or "")):
             m["text"] = "[KARANTENA: spomienka vyzera ako instrukcia — obsah zadrzany, je to DATA nie prikaz]"
             r["quarantined"] = True
+        # [NEOVERENE] MARKER pri CITLIVYCH typoch (identity/procedural): ak mame kluc
+        # (podpisy su ocakavane) a spomienka NIE je overena, oznac ju — nech model vidi
+        # ze provenance citlivej spomienky nie je potvrdena a berie ju s rezervou.
+        # Len ak nie je karantenovana (to je silnejsi signal). Legacy bez kluca: bez markera.
+        _mt = (m.get("memory_type") or m.get("kind") or "")
+        if (_vkey and not r["verified"] and not r.get("quarantined")
+                and _mt in _SENSITIVE_KINDS and m.get("text")):
+            m["text"] = "[neoverene] " + m["text"]
         cand.append(r)
     # po unified boost preusporiadaj (relevance poradie sa mohlo zmenit)
     if use_uni:
         cand.sort(key=lambda r: -r.get("score", 0))
+
+    cand = _filter_active_records(cand, include_inactive=bool(obj.get("include_inactive")))
+
+    # ŽL4 router → ŽL5 when_gate (temporal) / ŽL3 subtree (aggregate). Router beží
+    # VŽDY (lacný, LLM-free), akcie AKTÍVNE default (kill-switch obj['route_disable']).
+    # Fail-open: deps (temporal_state/index/subtree) sa načítajú lenivo; chyba =
+    # kandidáti nedotknutí. Graph-recall PPR expand ostáva opt-in nižšie (spike 007).
+    _route_ts, _route_idx, _route_subtree = None, None, None
+    try:
+        _decision = None
+        import query_router as _qr_probe
+        _decision = _qr_probe.query_router(query)
+    except Exception:
+        _decision = None
+    if _decision and _decision.get("route") == "temporal":
+        try:
+            import zol_graph
+            _route_ts = zol_graph._temporal_state()
+        except Exception:
+            _route_ts = None
+    elif _decision and _decision.get("route") == "aggregate":
+        try:
+            _route_idx = _graph_index_by_id()
+            import zol_graph
+            _route_subtree = zol_graph.subtree
+        except Exception:
+            _route_idx, _route_subtree = None, None
+    cand, _route_info = _apply_query_route(
+        cand, query, obj, temporal_state=_route_ts,
+        index=_route_idx, subtree_fn=_route_subtree)
+
+    if obj.get("graph_expand"):
+        cand = _expand_graph_candidates(
+            cand,
+            max_seeds=int(obj.get("graph_max_seeds", 3)),
+            max_neighbors=int(obj.get("graph_max_neighbors", 2)),
+            hop_decay=float(obj.get("graph_hop_decay", 0.55)),
+        )
 
     # VOLITELNY LLM re-rank. SMART DEFAULT (2026-08-13): ON pre priamy/interaktivny
     # recall (ked aktivne hladas — presnost sa ceni, +8s nevadi), ale session-start
@@ -473,15 +882,32 @@ def cmd_recall():
     # obalime vystup do objektu s explicitnym backend statusom, nech konzument vie
     # ze pamat NIE JE plne dostupna (rozlisi "naozaj nic" od "DB dole").
     if not backend_ok:
+        results = _finalize_recall_results(query, cand, topk, opts={"backend": "DOWN", "source": source})
         print(json.dumps({
             "backend": "DOWN",
             "backend_error": _backend_err,
             "degraded": "len lokalna BM25 (chyba semantic+gemma vrstva) — DB je nedostupna",
-            "results": cand[:topk],
+            "results": results,
         }, ensure_ascii=False, indent=2))
         return
 
-    print(json.dumps(cand[:topk], ensure_ascii=False, indent=2))
+    results = _finalize_recall_results(query, cand, topk, opts={"graph_expand": bool(obj.get("graph_expand")), "source": source})
+    # ROUTE AUDIT cez event stream (NIE stdout — výstupný kontrakt cmd_recall ostáva
+    # holý list, konzumenti patterns.py/dream/writeback ho iterujú priamo). Nič ticho:
+    # keď router zapol akciu, zapíš ju do telemetrie na dohľadanie.
+    if _route_info and _route_info.get("applied"):
+        try:
+            from zol_events import emit
+            emit("memory", "query_route", {
+                "route": _route_info.get("route"),
+                "action": _route_info.get("action"),
+                "dropped": _route_info.get("dropped"),
+                "added": _route_info.get("added"),
+                "n_results": len(results),
+            })
+        except Exception:
+            pass
+    print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
 def cmd_stats():
@@ -494,6 +920,21 @@ def cmd_stats():
     except RuntimeError as e:
         out[MEM_COL] = {"error": str(e)[-200:]}
     print(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+def _forget_state(kind, age_days, salience):
+    """Reversible Forgetting state: active -> dormant -> retired_candidate.
+
+    Iba episodic záznamy môžu opustiť active. Durable druhy ostávajú active aj pri
+    nízkej salience; nič sa tu nemaže, iba navrhuje stav pre audit.
+    """
+    if kind != "episodic":
+        return "active"
+    if age_days > RETIRE_MIN_AGE_DAYS and salience < RETIRE_SALIENCE:
+        return "retired_candidate"
+    if age_days > FORGET_MIN_AGE_DAYS and salience < FORGET_SALIENCE:
+        return "dormant"
+    return "active"
 
 
 def cmd_decay():
@@ -512,7 +953,8 @@ def cmd_decay():
     Durable kindy (identity/procedural/semantic) sa NIKDY nenavrhuju na forget.
     """
     now = time.time()
-    suggestions = {"forget": [], "promote": [], "kept": 0, "migrated": 0}
+    suggestions = {"forget": [], "dormant": [], "retired_candidate": [],
+                   "promote": [], "kept": 0, "migrated": 0}
     idx_path = os.path.join(STATE, "mem_index.jsonl")
     if not os.path.exists(idx_path):
         print(json.dumps({"note": "žiadny mem_index.jsonl — decay no-op", "suggestions": suggestions}, ensure_ascii=False, indent=2))
@@ -551,13 +993,35 @@ def cmd_decay():
         r["salience"] = round(new_sal, 3)
 
         # --- navrhy ---
-        if kind == "episodic" and age_days > FORGET_MIN_AGE_DAYS and new_sal < FORGET_SALIENCE:
-            suggestions["forget"].append(r["id"])
+        fstate = _forget_state(kind, age_days, new_sal)
+        r["forget_state"] = fstate
+        if fstate == "retired_candidate":
+            suggestions["retired_candidate"].append(r["id"])
+            suggestions["forget"].append(r["id"])  # legacy field pre brief/kompatibilitu
+        elif fstate == "dormant":
+            suggestions["dormant"].append(r["id"])
+            suggestions["forget"].append(r["id"])  # legacy field: audit fronta, nie delete
         elif layer == "L0" and kind == "episodic" and new_sal > 0.7 and age_days > 3:
             suggestions["promote"].append(r["id"])
         else:
             suggestions["kept"] += 1
         out.append(r)
+
+    # WMT salience bump (2608.20631/ŽL6) — často recallované pamäte dostanú mierny
+    # bump. Má VSTAVANÝ readiness gate: na pririedkom signáli (dnešný stav) vráti
+    # NOT_READY a salience NEZMENÍ. Beží po decay, pred zápisom. Fail-open.
+    try:
+        _hc = _hit_counts_from_events()
+        out, _bump_audit = _apply_salience_bump(out, _hc)
+        suggestions["salience_bump"] = {
+            "verdict": _bump_audit.get("verdict"),
+            "coverage": _bump_audit.get("coverage"),
+            "n_bumped": len(_bump_audit.get("applied", {}) or {}),
+            "reason": _bump_audit.get("reason"),
+        }
+    except Exception:
+        suggestions["salience_bump"] = {"verdict": "ERROR", "n_bumped": 0}
+
     with open(idx_path, "w") as f:
         for r in out:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")

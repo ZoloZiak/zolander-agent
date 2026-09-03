@@ -34,16 +34,16 @@ import math
 import subprocess
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 ZOL_MEM = os.path.join(ROOT, "toolkit", "zol_mem.py")
 VENV_YAR = os.path.join(ROOT, ".venv-yar", "bin", "python")
 EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 
-# palantir_client (chat/LLM) zije v zolander-data/toolkit; embedding je ODDELENY
+# palantir_client (chat/LLM) zije v __PROJECT__/toolkit; embedding je ODDELENY
 # subprocess do VENV_YAR (torch tam, nie tu).
-sys.path.insert(0, os.path.join(HOME, "zolander-data", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
 
 MATCH_THRESHOLD = float(os.environ.get("PATTERNS_MATCH", "0.6"))   # Lorentz dist pod tuto = ISTY match uz z embeddingu, bez LLM
 # Kolko NAJBLIZSICH ulozenych vzorcov dat LLM na re-check. NIE prah vzdialenosti:
@@ -72,7 +72,7 @@ def embed_many(texts):
 
 
 def recall(query, topk=8, mode="sem"):
-    payload = json.dumps({"query": query, "topk": topk, "mode": mode}, ensure_ascii=False)
+    payload = json.dumps({"query": query, "topk": topk, "mode": mode, "source": "patterns"}, ensure_ascii=False)
     p = subprocess.run([VENV_YAR, ZOL_MEM, "recall"], input=payload,
                        capture_output=True, text=True)
     if p.returncode != 0:

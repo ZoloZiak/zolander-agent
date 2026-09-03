@@ -12,7 +12,7 @@ import urllib.request
 import numpy as np
 
 HOME = os.path.expanduser("~")
-STATE = os.path.join(HOME, "zolander", "state")
+STATE = os.path.join(HOME, "projects", "zolander", "state")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 GOLD = os.path.join(STATE, "mem_eval_gold.json")
 OUT_CORP = os.path.join(STATE, "gemma_corpus.npz")

@@ -43,7 +43,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 IDENTITY = os.path.join(ROOT, "identity")
 KEY = os.path.join(IDENTITY, "zolander_ed25519.key")
 FP = os.path.join(IDENTITY, "fingerprint.txt")

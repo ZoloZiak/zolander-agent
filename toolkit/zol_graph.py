@@ -66,12 +66,102 @@ def _read(path):
     return out
 
 
-def link(a, b, edge, meta=None):
+# --- POISTKA proti rodeniu INVERTED/cyklickych parent hran (root-cause fix) -----
+# Historia: zolander_dream linkoval destilat VZDY ako parent (predpoklad "destilat =
+# abstraktnejsi"). Ked r_opus nesuhlasil, vznikla INVERTED hrana, ktoru sme potom
+# rucne cistili. Tu poistka odmietne zjavne obrateny/cyklicky parent UZ PRI VZNIKU.
+# V case linku NEEXISTUJE r_opus (peke sa az neskor cez bake_layer_score) — jediny
+# dostupny signal je vrstva (layer L0..L3), ktoru uzol ma hned. Preto layer, nie geometria.
+LAYER_ORD = {"L0": 0, "L1": 1, "L2": 2, "L3": 3}
+MEM_INDEX = os.path.join(STATE, "mem_index.jsonl")
+
+
+def _norm_layer(v):
+    """Znormalizuj vrstvu na ordinal (0..3). Prijme int aj string 'L2'. None ak nezname."""
+    if v is None:
+        return None
+    if isinstance(v, int):
+        return v
+    return LAYER_ORD.get(v)
+
+
+def _layer_map():
+    """id -> ordinal vrstvy z mem_index.jsonl. Neznamy/chybajuci layer sa vynecha."""
+    m = {}
+    for r in _read(MEM_INDEX):
+        lo = LAYER_ORD.get(r.get("layer"))
+        if lo is not None and r.get("id") is not None:
+            m[r["id"]] = lo
+    return m
+
+
+def _parent_reaches(start, target, edges=None):
+    """Da sa zo 'start' dojst do 'target' po EXISTUJUCICH parent hranach? DFS.
+    Cita cerstve EDGES (append je okamzity) — cyklus voci uz zapisanym hranam."""
+    if edges is None:
+        edges = _read(EDGES)
+    adj = {}
+    for e in edges:
+        if e.get("edge") == "parent":
+            adj.setdefault(e.get("from"), set()).add(e.get("to"))
+    stack, seen = [start], set()
+    while stack:
+        x = stack.pop()
+        if x == target:
+            return True
+        if x in seen:
+            continue
+        seen.add(x)
+        stack.extend(adj.get(x, ()))
+    return False
+
+
+def _parent_guard(a, b, from_layer=None, to_layer=None):
+    """Poistka pre parent hranu A->B (B je NADRADENY/abstraktnejsi koncept).
+    Vrat None ak je parent v poriadku, inak STRING dovod preco degradovat na 'related'.
+    FAIL-OPEN: ked signal chyba (nezname vrstvy), parent PREJDE — netvrdim inverziu
+    z nedostatku dat (pravidlo veducka: over, nedramatizuj z ciastocnej vzorky)."""
+    if a == b:
+        return "self_loop"
+    # 1) cyklus: ak B uz (nepriamo) dosiahne A po parent hranach, A->B ho uzavrie
+    if _parent_reaches(b, a):
+        return "would_create_cycle"
+    # 2) layer smer: rodic musi byt STRIKTNE abstraktnejsi (vyssia vrstva).
+    #    rovnaka vrstva = surodenci (meta-principy nie su hierarchia), nizsia = inverzia.
+    la = _norm_layer(from_layer) if from_layer is not None else None
+    lb = _norm_layer(to_layer) if to_layer is not None else None
+    if la is None or lb is None:
+        lm = _layer_map()
+        if la is None:
+            la = lm.get(a)
+        if lb is None:
+            lb = lm.get(b)
+    if la is None or lb is None:
+        return None  # fail-open: bez vrstiev netvrdim nic
+    if lb < la:
+        return "inverted_layer"   # rodic nizsie nez dieta
+    if lb == la:
+        return "same_layer"       # surodenci, nie hierarchia
+    return None
+
+
+def link(a, b, edge, meta=None, enforce=True, from_layer=None, to_layer=None):
     if edge not in EDGE_TYPES:
         raise SystemExit(f"neznamy typ hrany: {edge} (z {EDGE_TYPES})")
+    degraded = None
+    if edge == "parent" and enforce:
+        try:
+            degraded = _parent_guard(a, b, from_layer=from_layer, to_layer=to_layer)
+        except Exception:
+            degraded = None  # poistka NESMIE zhodit zapis (fail-open aj pri chybe)
+        if degraded:
+            edge = "related"  # zjavne obrateny/cyklicky parent -> nechaj ako asociaciu
     e = {"from": a, "to": b, "edge": edge, "ts": _now()}
-    if meta:
-        e["meta"] = meta
+    if meta or degraded:
+        e["meta"] = dict(meta or {})
+        if degraded:
+            e["meta"]["degraded_from"] = "parent"
+            e["meta"]["degrade_reason"] = degraded
     _append(EDGES, e)
     return e
 
@@ -248,6 +338,47 @@ def stats():
             "temporal_records": len(temporal), "superseded": superseded}
 
 
+def _articulation_points(adj, comp):
+    """Cut vertices (Harju §2.2) v rámci komponentu `comp` nad adjacenciou `adj`.
+    Tarjan, ITERATIVNY DFS (žiadna hlboká rekurzia — sandbox/stack-safe). Vráti set uzlov,
+    ktorých odstránenie rozpojí komponent = spomienky-MOSTY (decay-critical). Aditívne,
+    nič nemení; len obohacuje communities() o krehkosť témy."""
+    disc, low, parent, ap = {}, {}, {}, set()
+    t = [0]
+    for root in comp:
+        if root in disc:
+            continue
+        stack = [(root, iter(sorted(adj.get(root, set()) & comp)))]
+        disc[root] = low[root] = t[0]
+        t[0] += 1
+        root_children = 0
+        while stack:
+            node, it = stack[-1]
+            advanced = False
+            for nb in it:
+                if nb not in disc:
+                    parent[nb] = node
+                    if node == root:
+                        root_children += 1
+                    disc[nb] = low[nb] = t[0]
+                    t[0] += 1
+                    stack.append((nb, iter(sorted(adj.get(nb, set()) & comp))))
+                    advanced = True
+                    break
+                elif nb != parent.get(node):
+                    low[node] = min(low[node], disc[nb])
+            if not advanced:
+                stack.pop()
+                if stack:
+                    par = stack[-1][0]
+                    low[par] = min(low[par], low[node])
+                    if parent.get(par) is not None and low[node] >= disc[par]:
+                        ap.add(par)
+        if root_children > 1:
+            ap.add(root)
+    return ap
+
+
 def communities(min_size=3, edge="related"):
     """Najdi husto prepojene KOMUNITY (suvisle komponenty) nad danym typom hrany.
 
@@ -256,8 +387,18 @@ def communities(min_size=3, edge="related"):
     vydestilovat abstrakt — na rozdiel od nahodneho zhluku ma REALNU hustotu
     hran (poistka proti prazdnemu pseudo-principu, abstraction-engine test).
 
-    Vracia zoznam komunit zoradeny podla hustoty (density = hrany/uzly), kazda:
-      {members:[ids], edges:N, density:float, has_parent:[ids co uz maju parent]}
+    Vracia zoznam komunit zoradeny podla `density`, kazda:
+      {members:[ids], edges:N, density:float, cut_vertices:[ids], has_parent:[ids]}
+
+    POZOR — `density` NIE JE standardna grafova hustota (2E/N(N-1) ∈ [0,1]), ale
+    LINK_RATIO = hrany/uzol (moze byt >1). Je to ZAMER, nie bug: pre nas ucel
+    (zastresit VELKE suvisle temy) uprednostnuje velkost×prepojenost — overene na
+    realnom grafe, ze standardna hustota by 42-uzlovu temu identity zhodila na dno
+    a male kliky by ju predbehli. min_density=1.0 prah v zolander_dream zavisi na
+    TEJTO definicii — NEMENIT vzorec bez rekalibraci dreamu.
+
+    `cut_vertices` (Harju §2.2, pridane 2026-08-30): uzly-MOSTY, ktorych strata rozpoji
+    temu na ostrovy = decay-critical spomienky. Signal pre honesty/decay, nemeni destilaciu.
     Deterministicke, bez LLM. min_size = min pocet uzlov aby to bola komunita.
     """
     edges = _read(EDGES)
@@ -299,8 +440,10 @@ def communities(min_size=3, edge="related"):
             ec += len(adj.get(m, set()) & comp)
         ec //= 2  # neorientovane
         density = ec / max(len(comp), 1)
+        cuts = _articulation_points(adj, comp)
         comps.append({"members": sorted(comp), "edges": ec,
                       "density": round(density, 3),
+                      "cut_vertices": sorted(cuts),
                       "has_parent": sorted(comp & has_parent)})
     comps.sort(key=lambda c: -c["density"])
     return comps
@@ -313,7 +456,9 @@ def main():
         return 0
     cmd = a[0]
     if cmd == "link" and len(a) >= 4:
-        print(json.dumps(link(int(a[1]), int(a[3]), a[2]), ensure_ascii=False))
+        force = "--force" in a
+        print(json.dumps(link(int(a[1]), int(a[3]), a[2], enforce=not force),
+                         ensure_ascii=False))
     elif cmd == "supersede" and len(a) >= 3:
         print(json.dumps(supersede(int(a[1]), int(a[2])), ensure_ascii=False))
     elif cmd == "reparent" and len(a) >= 3:

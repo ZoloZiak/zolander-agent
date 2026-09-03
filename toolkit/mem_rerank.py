@@ -14,8 +14,10 @@ import os
 import re
 import sys
 import json
+import time
+import hashlib
 
-sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolander-data", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolander-data","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolander-data","toolkit"))
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "__PROJECT__", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","__PROJECT__","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"__PROJECT__","toolkit"))
 
 _SYS = (
     "Si presny re-ranker pamate. Dostanes OTAZKU a ZOZNAM kandidatnych spomienok "
@@ -25,6 +27,75 @@ _SYS = (
     "Nerelevantne kandidaty vynechaj z pola."
 )
 
+CACHE_PATH = os.environ.get(
+    "ZOL_RERANK_CACHE",
+    os.path.join(os.path.expanduser("~"), "projects", "zolander", "state", "mem_rerank_cache.json"),
+)
+CACHE_MAX = int(os.environ.get("ZOL_RERANK_CACHE_MAX", "2000"))
+CACHE_TTL_DAYS = float(os.environ.get("ZOL_RERANK_CACHE_TTL_DAYS", "60"))
+
+
+def _cache_key(query, candidates, model="opus"):
+    payload = {
+        "v": 1,
+        "model": model,
+        "query": query,
+        "candidates": [
+            {"id": c.get("id"), "text": (c.get("text") or "")[:280]}
+            for c in candidates
+        ],
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()
+
+
+def _load_cache(path=None):
+    path = path or CACHE_PATH
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_cache(cache, path=None):
+    path = path or CACHE_PATH
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        items = sorted(cache.items(), key=lambda kv: kv[1].get("ts", 0), reverse=True)[:CACHE_MAX]
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(items), f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _cache_get(key, valid_ids, path=None, now=None):
+    cache = _load_cache(path)
+    ent = cache.get(key)
+    if not isinstance(ent, dict):
+        return None
+    now = now or time.time()
+    ts = float(ent.get("ts", 0) or 0)
+    if CACHE_TTL_DAYS > 0 and ts and now - ts > CACHE_TTL_DAYS * 86400:
+        return None
+    order = ent.get("order")
+    if not isinstance(order, list):
+        return None
+    valid = set(valid_ids)
+    ranked = [int(i) for i in order if i in valid]
+    ranked += [i for i in valid_ids if i not in ranked]
+    return ranked
+
+
+def _cache_put(key, order, path=None):
+    cache = _load_cache(path)
+    cache[key] = {"ts": time.time(), "order": [int(i) for i in order]}
+    _save_cache(cache, path)
+
+
 
 def rerank(query, candidates, model="opus", max_ids=None):
     """candidates: list dict s 'id' a 'text'. Vrat list id (preusporiadane).
@@ -32,6 +103,10 @@ def rerank(query, candidates, model="opus", max_ids=None):
     orig = [c["id"] for c in candidates]
     if not candidates:
         return orig
+    key = _cache_key(query, candidates, model=model)
+    cached = _cache_get(key, orig)
+    if cached is not None:
+        return cached[:max_ids] if max_ids else cached
     try:
         from palantir_client import chat
     except Exception:
@@ -58,6 +133,7 @@ def rerank(query, candidates, model="opus", max_ids=None):
     ranked = [i for i in ranked if i in valid]
     # dolep kandidatov co Opus vynechal (na koniec, aby sa nestratili)
     ranked += [i for i in orig if i not in ranked]
+    _cache_put(key, ranked)
     return ranked[:max_ids] if max_ids else ranked
 
 

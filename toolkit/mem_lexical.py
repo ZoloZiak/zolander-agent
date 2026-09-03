@@ -19,7 +19,7 @@ import json
 import unicodedata
 
 HOME = os.path.expanduser("~")
-IDX = os.path.join(HOME, "zolander", "state", "mem_index.jsonl")
+IDX = os.path.join(HOME, "projects", "zolander", "state", "mem_index.jsonl")
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 

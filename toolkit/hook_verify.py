@@ -35,7 +35,7 @@ REVIEW_EXT = (".md", ".py", ".js", ".ts", ".mjs", ".jsx", ".tsx", ".css", ".html
 MOA_MIN_CHARS = 200
 MOA_MAX_CHARS = 20000
 MOA_MAX_FILES = 2
-LOG = os.path.expanduser("~/zolander/logs/verify.jsonl")
+LOG = os.path.expanduser("~/projects/zolander/logs/verify.jsonl")
 
 
 def _log(ev, **kw):
@@ -171,8 +171,8 @@ def _moa_review(changed, cwd):
 
     problems = []
     try:
-        sys.path.insert(0, os.path.expanduser("~/zolander/toolkit"))
-        sys.path.insert(0, os.path.expanduser("~/projects/zolander-data/toolkit"))
+        sys.path.insert(0, os.path.expanduser("~/projects/zolander/toolkit"))
+        sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
         from zol_eval import evaluate
         threshold = float(os.environ.get("ZOL_VERIFY_MOA_THRESHOLD", "0.6"))
         for path, txt in files:
@@ -182,7 +182,9 @@ def _moa_review(changed, cwd):
             ev = evaluate(zadanie, txt, generator="opus", eval_system=REVIEW_SYSTEM)
             cel = ev.get("celkom")
             per = ev.get("per_judge", {})
+            sa = ev.get("scale_audit") or {}
             _log("moa_file", path=path, celkom=cel,
+                 scale_verdict=sa.get("verdict"), scale_censored=sa.get("censored"),
                  judges={k: (v.get("celkom") if isinstance(v, dict) else None)
                          for k, v in per.items()})
             if cel is not None and cel < threshold:

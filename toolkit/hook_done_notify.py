@@ -14,7 +14,7 @@ import json
 import subprocess
 
 HOME = os.path.expanduser("~")
-DESKTOP = os.path.join(HOME, "zolander", "toolkit", "zol_desktop_notify.py")
+DESKTOP = os.path.join(HOME, "projects", "zolander", "toolkit", "zol_desktop_notify.py")
 PYBIN = "/usr/bin/python3"
 
 

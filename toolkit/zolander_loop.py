@@ -18,18 +18,19 @@ import subprocess
 import datetime
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 DENNIKY = os.path.join(ROOT, "denniky")
 LOGS = os.path.join(ROOT, "logs")
 HEARTBEAT = os.path.join(STATE, "heartbeat.txt")
 LOOPLOG = os.path.join(LOGS, "loop.log")
 INTEGRITY = os.path.join(ROOT, "toolkit", "integrity.py")
+LAST_SIG = os.path.join(STATE, "loop_last_findings.json")
 
 # dovolene projekty na sken (P1 z PLAN §5) — len citanie stavu, ziadne zmeny
 ALLOWED_PROJECTS = [
-    os.path.join(HOME, "zolander-data"),
-    os.path.join(HOME, "turiec-pod-lupou"),
+    os.path.join(HOME, "projects", "__PROJECT__"),
+    os.path.join(HOME, "projects", "turiec-pod-lupou"),
 ]
 
 
@@ -124,18 +125,52 @@ def scan_projects():
     return findings
 
 
+def _findings_sig(findings):
+    """Stabilny podpis stavu (BEZ timestampu): projekt -> zoradeny zoznam dirty riadkov.
+    Rovnaky stav = rovnaky podpis -> tick nezapise nic (koniec spamu). stdlib only."""
+    return {name: sorted(dirty) for name, dirty in findings}
+
+
+def _load_last_sig():
+    try:
+        with open(LAST_SIG, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _save_last_sig(sig):
+    os.makedirs(STATE, exist_ok=True)
+    tmp = LAST_SIG + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(sig, f, ensure_ascii=False)
+    os.replace(tmp, LAST_SIG)
+
+
 def write_diary(findings):
-    if not findings:
+    """Zapis do dennika LEN ked sa stav REALNE zmenil oproti minulemu ticku.
+    Predtym: append kazdy tick (~kazdych 20 min) -> 30x identicky blok/den = spam.
+    Teraz: porovnaj podpis (projekt+zoradene dirty subory, bez casu); zhoda -> skip.
+    Prechod 'nieco dirty' -> 'ciste' sa zaznamena raz (hodnotna info, nie spam)."""
+    sig = _findings_sig(findings)
+    last = _load_last_sig()
+    if last is not None and sig == last:
+        log("diary: stav nezmeneny od minuleho ticku — nezapisujem (dedup)")
         return
     os.makedirs(DENNIKY, exist_ok=True)
     day = datetime.date.today().isoformat()
     path = os.path.join(DENNIKY, f"{day}.md")
     with open(path, "a") as f:
         f.write(f"\n## tick {now()}\n")
-        for name, dirty in findings:
-            f.write(f"- **{name}**: {len(dirty)} nezacomitovanych zmien\n")
-            for line in dirty[:20]:
-                f.write(f"  - `{line}`\n")
+        if not findings:
+            # prechod do cista (last mal nieco, teraz nic) — zaznamenaj raz
+            f.write("- ✅ vsetky sledovane projekty CISTE (0 nezacomitovanych zmien)\n")
+        else:
+            for name, dirty in findings:
+                f.write(f"- **{name}**: {len(dirty)} nezacomitovanych zmien\n")
+                for line in dirty[:20]:
+                    f.write(f"  - `{line}`\n")
+    _save_last_sig(sig)
 
 
 def tick():

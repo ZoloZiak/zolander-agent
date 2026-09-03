@@ -24,6 +24,8 @@ from zol_paths import venv_python, ZROOT, ZOLO2
 VPY = venv_python()
 ZOL_MEM = os.path.join(HERE, "zol_mem.py")
 ZOL_GUARD = os.path.join(HERE, "zol_guard.py")
+ZOL_CHECKER = os.path.join(HERE, "zol_checker.py")
+ZOL_META = os.path.join(HERE, "zol_meta.py")
 LENS = os.path.join(HERE, "lens.py")
 PATTERNS = os.path.join(HERE, "patterns.py")
 PLAN = os.path.join(ZROOT, "PLAN.md")
@@ -65,7 +67,7 @@ def inbox_tail(n=8):
 
 
 def batch_status():
-    """Jednoriadkovy stav book-batchu (zolander-data). Fail-open => prazdny retazec."""
+    """Jednoriadkovy stav book-batchu (__PROJECT__). Fail-open => prazdny retazec."""
     if not os.path.exists(BATCH_STATE):
         return ""
     try:
@@ -82,6 +84,62 @@ def batch_status():
     if cur:
         return f"book-batch: BEZI {done}/{total}, prave: {cur} ({upd})"
     return f"book-batch: {done}/{total}, nedokoncene/stoji ({upd})"
+
+
+def _recall_rank_label(hit):
+    d = hit.get("distance")
+    sc = hit.get("score")
+    if isinstance(d, (int, float)):
+        return f"d={d:.3f}"
+    if isinstance(sc, (int, float)):
+        return f"s={sc:.2f}"
+    return "rank"
+
+
+def format_recall_hits(hits):
+    """Štruktúrovaný session-start recall podľa memory_type/domény.
+
+    Structured Memory (2608.08300): nevpinevhodne pamäť ako jeden flat zoznam. Identity,
+    procedurálne pravidlá a epizódy majú inú dôverovú/doménovú váhu, preto ich drž v
+    oddelených bucketoch už v texte, ktorý ide do modelu.
+    """
+    if isinstance(hits, dict):
+        prefix = []
+        if hits.get("backend") == "DOWN":
+            prefix.append("PAMÄŤ: BACKEND DOWN — zobrazený je degradovaný recall")
+        hits = hits.get("results", [])
+    else:
+        prefix = []
+    order = ("identity", "procedural", "semantic", "episodic", "?")
+    labels = {
+        "identity": "PAMÄŤ — identity (jadro / nemiešať s epizódami)",
+        "procedural": "PAMÄŤ — procedural (postupy / pravidlá práce)",
+        "semantic": "PAMÄŤ — semantic (fakty / poznatky)",
+        "episodic": "PAMÄŤ — episodic (udalosti / pracovné stopy)",
+        "?": "PAMÄŤ — iné/nezaradené",
+    }
+    groups = {k: [] for k in order}
+    for h in hits:
+        m = h.get("meta", {}) or {}
+        mt = (m.get("memory_type") or m.get("kind") or "?")
+        if mt not in groups:
+            mt = "?"
+        groups[mt].append((h, m))
+    lines = list(prefix)
+    any_hit = False
+    for mt in order:
+        rows = groups.get(mt) or []
+        if not rows:
+            continue
+        any_hit = True
+        lines.append(labels[mt] + ":")
+        for h, m in rows:
+            txt = (m.get("text") or "")[:90]
+            mid = h.get("id", "?")
+            lines.append(f"  - #{mid} {_recall_rank_label(h)} {txt}")
+    if not any_hit:
+        lines.append("PAMÄŤ: nič relevantné")
+    return "\n".join(lines)
 
 
 def cmd_start():
@@ -105,21 +163,11 @@ def cmd_start():
     # rerank:false — session-start ide o SIRKU kontextu, nie dokonale poradie;
     # +8s/1 Opus call na kazdy nabeh (aj gateway) netreba. Priamy recall ma rerank ON.
     rc, out, err = _run([VPY, ZOL_MEM, "recall"],
-                        stdin=json.dumps({"query": query, "topk": 6, "rerank": False}))
+                        stdin=json.dumps({"query": query, "topk": 6, "rerank": False, "source": "session_hook"}))
     if rc == 0:
         try:
             hits = json.loads(out)
-            print("PAMÄŤ (top spomienky k stavu):")
-            for h in hits:
-                m = h.get("meta", {})
-                txt = m.get("text", "")[:90]
-                mt = (m.get("memory_type") or m.get("kind") or "?")
-                d = h.get("distance")
-                sc = h.get("score")
-                # distance je None pre lexical-only (BM25) zaznamy -> ukaz score
-                rank = f"d={d:.3f}" if isinstance(d, (int, float)) else \
-                       (f"s={sc:.2f}" if isinstance(sc, (int, float)) else "lex")
-                print(f"  [{mt:10s} {rank}] {txt}")
+            print(format_recall_hits(hits))
         except Exception:
             print("recall raw:", out[:400])
     else:
@@ -216,6 +264,48 @@ def cmd_pattern():
         sys.exit(1)
 
 
+def cmd_checker():
+    """Evidence->checker gate: spusti anchor manifest cez zol_checker.py. Toto je
+    Recuris 'checker' v praxi — ciel je hotovy LEN ked observacia (disk/proces) potvrdi.
+    Passthrough na zol_checker.py run <manifest> [--regress]; exit kod prepustime
+    (0=PASS, 1=FAIL, 2=REGRESIA), aby volajuci gate vedel zastavit."""
+    if len(sys.argv) < 3:
+        print("pouzitie: zol_session.py checker <manifest.json> [--regress]",
+              file=sys.stderr)
+        sys.exit(2)
+    args = [SYS_PY, ZOL_CHECKER, "run", sys.argv[2]]
+    if "--regress" in sys.argv[3:]:
+        args.append("--regress")
+    rc, out, err = _run(args)
+    print(out.strip() or err.strip())
+    sys.exit(rc)
+
+
+def cmd_gen():
+    """Auto-generuj anchor manifest z typu ulohy (bod 2). Passthrough na zol_checker gen.
+    Napr.: zol_session.py gen code path=/x/y.py --run  |  gen push repo=... sha=... --run"""
+    if len(sys.argv) < 3:
+        print("pouzitie: zol_session.py gen <task_type> k=v... [--run] [--out <path>]",
+              file=sys.stderr)
+        sys.exit(2)
+    rc, out, err = _run([SYS_PY, ZOL_CHECKER, "gen"] + sys.argv[2:])
+    print(out.strip() or err.strip())
+    sys.exit(rc)
+
+
+def cmd_meta():
+    """Meta-Agent (bod 1): z checker reportu spravi lokalizovane repair directives.
+    Passthrough na zol_meta.py. Napr.: zol_session.py meta diagnose <report.json>
+    | meta verify <manifest.json> | meta pending. PROPOSE-MODE — nemeni main sam."""
+    if len(sys.argv) < 3:
+        print("pouzitie: zol_session.py meta <diagnose|propose|verify|pending> [...]",
+              file=sys.stderr)
+        sys.exit(2)
+    rc, out, err = _run([SYS_PY, ZOL_META] + sys.argv[2:])
+    print(out.strip() or err.strip())
+    sys.exit(rc)
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "start"
     if cmd == "start":
@@ -228,8 +318,16 @@ def main():
         cmd_lens()
     elif cmd == "pattern":
         cmd_pattern()
+    elif cmd == "checker":
+        cmd_checker()
+    elif cmd == "gen":
+        cmd_gen()
+    elif cmd == "meta":
+        cmd_meta()
     else:
-        print(f"neznámy režim: {cmd} (start|koniec|gate|lens|pattern)", file=sys.stderr)
+        print(f"neznámy režim: {cmd} "
+              f"(start|koniec|gate|lens|pattern|checker|gen|meta)",
+              file=sys.stderr)
         sys.exit(2)
 
 

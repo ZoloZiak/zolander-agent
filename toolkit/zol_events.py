@@ -33,7 +33,7 @@ import json
 import time
 import datetime
 
-ROOT = os.path.expanduser("~/zolander")
+ROOT = os.path.expanduser("~/projects/zolander")
 STATE = os.path.join(ROOT, "state")
 LOG = os.path.join(STATE, "events.jsonl")
 MAX_DATA_CHARS = 2000  # ochrana: neuloz obri prompt cely, orez (kontext-hygiena)

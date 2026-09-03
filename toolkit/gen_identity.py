@@ -11,7 +11,7 @@ import hashlib
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
-BASE = os.path.expanduser("~/zolander/identity")
+BASE = os.path.expanduser("~/projects/zolander/identity")
 KEY = os.path.join(BASE, "zolander_ed25519.key")
 PUB = os.path.join(BASE, "zolander_ed25519.pub")
 FP = os.path.join(BASE, "fingerprint.txt")

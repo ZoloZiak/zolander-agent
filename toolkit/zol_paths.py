@@ -4,7 +4,7 @@
 Ziaden hardcoded /Users/... layout. Kazda cesta sa najprv vezme z env
 (explicitny override), inak sa AUTO-DETEKUJE z rozumnych kandidatov, inak
 padne na default. Tak bezi identicky kod:
-  - u autora (~/projects/zolander + ~/projects/zolander-data),
+  - u autora (~/projects/zolander + ~/projects/__PROJECT__),
   - u klonujuceho (~/zolander + repo-lokalny hs.mjs vedla tohto suboru).
 
 Import: `from zol_paths import HS, NODE, NODE_ENV, ZROOT, ZOLO2, here`.
@@ -33,16 +33,16 @@ def zolander_root():
 
 
 def zolo2_root():
-    """Korenovy adresar zolander-data (volitelny — cross-import pri niektorych nastrojoch)."""
+    """Korenovy adresar __PROJECT__ (volitelny — cross-import pri niektorych nastrojoch)."""
     return os.environ.get("ZOLO2_ROOT") or _first_existing(
-        [os.path.join(HOME, "projects", "zolander-data"), os.path.join(HOME, "zolander-data")],
-        os.path.join(HOME, "zolander-data"),
+        [os.path.join(HOME, "projects", "__PROJECT__"), os.path.join(HOME, "__PROJECT__")],
+        os.path.join(HOME, "__PROJECT__"),
     )
 
 
 def hs_mjs():
     """Node SDK most hs.mjs. Priorita: env -> vedla tohto suboru (repo ploche
-    toolkit/) -> zolander-data/toolkit (layout autora)."""
+    toolkit/) -> __PROJECT__/toolkit (layout autora)."""
     return os.environ.get("ZOL_HS_MJS") or _first_existing(
         [os.path.join(here, "hs.mjs"), os.path.join(zolo2_root(), "toolkit", "hs.mjs")],
         os.path.join(here, "hs.mjs"),

@@ -15,9 +15,9 @@ import itertools
 import numpy as np
 
 HOME = os.path.expanduser("~")
-STATE = os.path.join(HOME, "zolander", "state")
+STATE = os.path.join(HOME, "projects", "zolander", "state")
 GOLD = os.path.join(STATE, "mem_eval_gold.json")
-sys.path.insert(0, os.path.join(HOME, "zolander", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolander", "toolkit"))
 FETCH = 20
 
 

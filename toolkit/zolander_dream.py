@@ -25,6 +25,8 @@ LOGS = os.path.join(ROOT, "logs")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 ZOL_MEM = os.path.join(ROOT, "toolkit", "zol_mem.py")
 ASCEND = os.path.join(ROOT, "toolkit", "ascend.py")
+RECONCILE = os.path.join(ROOT, "toolkit", "reconcile_guard.py")
+MEM_STORE = os.path.join(ROOT, "toolkit", "mem_store.py")
 DREAMLOG = os.path.join(LOGS, "dream.log")
 # zol_mem/ascend potrebuju YAR v5 embedder (torch) -> dedikovany .venv-yar,
 # NIE stary vmlx python ani /usr/bin/python3 (tie torch nemaju).
@@ -34,7 +36,7 @@ EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 # nocny automat nema kontext-limit problem). Prepisatelne cez DREAM_MODEL.
 DREAM_MODEL = os.environ.get("DREAM_MODEL", "opus")
 
-sys.path.insert(0, os.path.join(HOME, "projects", "zolander-data", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
 sys.path.insert(0, os.path.join(ROOT, "toolkit"))  # cluster_llm
 
 
@@ -60,6 +62,66 @@ def run_decay():
         return out.get("suggestions", out)  # decay vracia bud suggestions alebo priamo
     except Exception:
         return {}
+
+
+def run_reconcile():
+    """Po nocnych mutaciach (decay/konsolidacia/ascend/dedup) skontroluj drift
+    3 skladov (Lorentz/Gemma/index). --fix dopise ZIVYCH orphanov do indexu
+    (bezpecne: len BM25-viditelnost, ziadne mazanie). Vrati report dict alebo {}.
+
+    Bezi cez VPY (.venv-yar), lebo reconcile_guard potrebuje YAR embedder (torch),
+    dream sam bezi pod /usr/bin/python3 bez torchu."""
+    try:
+        p = subprocess.run([VPY, RECONCILE, "--fix"],
+                           capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        log("reconcile: timeout (600s) — preskakujem, skusi sa nabuduce")
+        return {}
+    except Exception as e:
+        log(f"reconcile zlyhal (fail-open): {e!r}")
+        return {}
+    # guard pise JSON report na stdout (progress na stderr). Exit 2 = drift bol.
+    try:
+        out = p.stdout.strip()
+        rep = json.loads(out[out.find("{"):out.rfind("}") + 1])
+    except Exception:
+        log(f"reconcile: report parse zlyhal (rc={p.returncode}): {p.stderr[-200:]}")
+        return {}
+    log(f"reconcile: drift={rep.get('DRIFT')} orphans={rep.get('ORPHANS (zive v DB, nie v indexe)')} "
+        f"zombies={rep.get('ZOMBIES (zive v Gemma, mrtve v Lorentz)')} "
+        f"fixed={rep.get('FIXED (dopisane do indexu)', [])}")
+    return rep
+
+
+def run_sync():
+    """Po nocnych mutaciach zosulad OBE kolekcie (zol_mem lorentz + zol_mem_gemma
+    cosine) s indexom cez mem_store.py sync. Na rozdiel od reconcile_guard (co len
+    dopise BM25-viditelnost do indexu) tento KROK realne zmaze duchov z DB a doplni
+    chybajuce ID do oboch reprezentacii — nech maju vzdy rovnaky zivy obsah.
+
+    Idempotentny: ked je uz synced, nic nemeni. Del-pred-insert prebija soft-delete
+    tombstony. Bezi cez VPY (.venv-yar, YAR embedder). Fail-open: chyba nezhodi sen.
+    """
+    try:
+        p = subprocess.run([VPY, MEM_STORE, "sync"],
+                           capture_output=True, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        log("sync: timeout (900s) — preskakujem, skusi sa nabuduce")
+        return {}
+    except Exception as e:
+        log(f"sync zlyhal (fail-open): {e!r}")
+        return {}
+    out = p.stdout.strip()
+    try:
+        rep = json.loads(out[out.find("{"):out.rfind("}") + 1])
+    except Exception:
+        log(f"sync: report parse zlyhal (rc={p.returncode}): {p.stderr[-200:]}")
+        return {}
+    done = rep.get("done", {})
+    log(f"sync: gemma_del={done.get('gemma_del')} gemma_add={done.get('gemma_add')} "
+        f"lorentz_del={done.get('lorentz_del')} lorentz_add={done.get('lorentz_add')} "
+        f"fail={done.get('fail')}")
+    return rep
 
 
 def load_index():
@@ -112,7 +174,8 @@ def _distill_group(group, model):
     joined = "\n".join(f"- {e.get('text', '')}" for e in group)
     system = ("Si Zolander, pamatovy konsolidator. Z epizod JEDNEJ temy vydestiluj "
               "1-2 vety trvaleho poznatku (semantic memory) po slovensky. Len fakt/"
-              "vzorec, ziadny datum, ziadna omacka. Ak niet co destilovat, napis NIC.")
+              "vzorec, ziadna omacka. Ak epizody obsahuju konkretne datumy/casove "
+              "udaje, zachovaj ich; cas je fakt, nie vata. Ak niet co destilovat, napis NIC.")
     prompt = f"Epizody (jedna tema):\n{joined}\n\nDestilat (1-2 vety, alebo NIC):"
     try:
         txt = chat(prompt, model=model, max_tokens=200, system=system).strip()
@@ -231,7 +294,7 @@ def consolidate_graph(model=DREAM_MODEL, min_size=3, min_density=1.0):
         # nalinkuj clenov -> novy abstrakt (parent), aby bola tema navigovatelna
         try:
             for m in members:
-                zol_graph.link(m, nid, "parent")
+                zol_graph.link(m, nid, "parent", to_layer="L1")
         except Exception as e:
             log(f"consolidate_graph: link {nid} zlyhal (fail-open): {e!r}")
         created.append({"id": nid, "layer": "L1", "text": text, "from_ids": members})
@@ -255,7 +318,7 @@ def _index_text_map():
     return m
 
 
-def write_brief(decay_res, episodes, distilled_l1, ascended=None, merges=None):
+def write_brief(decay_res, episodes, distilled_l1, ascended=None, merges=None, reconcile=None, blocked=None):
     """distilled_l1 = list dictov {text, from_ids, id} novych L1 konceptov."""
     day = datetime.date.today().isoformat()
     path = os.path.join(DENNIKY, f"brief_{day}.md")
@@ -299,6 +362,35 @@ def write_brief(decay_res, episodes, distilled_l1, ascended=None, merges=None):
                         f"{m.get('removed_text', '')} ({m.get('reason', '')})\n")
         else:
             f.write("- žiadne duplikáty\n")
+        # SUPERSET BRÁNA: koľko škodlivých zlúčení brána ZABLOKOVALA (fail-closed —
+        # keeper NEobsahoval všetko z kandidáta, tak sa NEmazalo). Signál že brána
+        # pracuje: vysoké číslo = opus navrhoval zlúčiť fakty čo NIE sú supersety.
+        blk = blocked or []
+        f.write(f"\n## Superset brána (zablokované škodlivé zlúčenia — {len(blk)})\n")
+        if blk:
+            f.write("*Brána nechala oba fakty — keeper NEobsahoval všetko z kandidáta.*\n")
+            for b in blk:
+                f.write(f"- CHRÁNENÉ id={b.get('blocked')} (opus chcel do id={b.get('kept')}): "
+                        f"{b.get('blocked_text', '')} ({b.get('reason', '')})\n")
+        else:
+            f.write("- nič nezablokované (žiadne falošné zlúčenie tento beh)\n")
+        # RECONCILE: stav 3 skladov po nocnych mutaciach (Bug 1 prevencia)
+        rec = reconcile or {}
+        if rec:
+            drift = rec.get("DRIFT")
+            orphans = rec.get("ORPHANS (zive v DB, nie v indexe)", [])
+            zombies = rec.get("ZOMBIES (zive v Gemma, mrtve v Lorentz)", [])
+            fixed = rec.get("FIXED (dopisane do indexu)", [])
+            flag = "⚠️ DRIFT" if drift else "✅ čisté"
+            f.write(f"\n## Reconcile skladov (Lorentz/Gemma/index) — {flag}\n")
+            if fixed:
+                f.write(f"- **dopísané do indexu (--fix)**: {fixed}\n")
+            if zombies:
+                f.write(f"- **ZOMBIE (živé v Gemma, mŕtve v Lorentz — dočisti)**: {zombies}\n")
+            if orphans:
+                f.write(f"- **orphany (živé v DB, chýbali v indexe)**: {orphans}\n")
+            if not (fixed or zombies or orphans):
+                f.write("- žiadny drift, sklady konzistentné\n")
         f.write("\n---\n*Vedúcko, jediné čo som sám zmazal sú dedup-duplikáty vyššie "
                 "(recovery v dedup_trash.jsonl). Forget-návrhy čakajú na tvoj audit.*\n")
     return path
@@ -321,32 +413,65 @@ def dream():
                 import zol_graph
                 for i in d.get("from_ids", []):
                     if i is not None:
-                        zol_graph.link(i, nid, "parent")
+                        zol_graph.link(i, nid, "parent", to_layer="L1")
             except Exception as e:
                 log(f"zol_graph L0->L1 link {nid} zlyhal (fail-open): {e!r}")
-    ascended = ascend_higher(model=DREAM_MODEL)  # F8: dvihni L1->L2->L3
-    # C — SEN NAD GRAFOM: nad asociacnym grafom (related hrany z B) najdi husto
-    # prepojene komunity = vznikajuce temy a daj im strechu (abstrakt + parent
-    # hrany). Beh PO ascend, aby graf uz obsahoval aj cerstve parent hrany.
-    # Fail-open: chyba grafovej konsolidacie nezhodi sen.
-    try:
-        graph_abstracts = consolidate_graph(model=DREAM_MODEL)
-        ascended = (ascended or []) + graph_abstracts
-    except Exception as e:
-        log(f"consolidate_graph faza zlyhala (fail-open): {e!r}")
+    # BUG 2 FIX (2026-08-30, vypnute na ziadost veducka): F8 rebrik L1->L2->L3
+    # (ascend_higher) + sen nad grafom (consolidate_graph) SU VYPNUTE. Oba
+    # generovali abstraktne "PRINCIP:"/"META-RAMEC:" destilaty do vysokych vrstiev,
+    # ktore recall serviroval PRVE (high-layer+lscore) => pamat sa plnila
+    # mudroslovim namiesto faktov (aforizmova vata). Denna L0->L1 konsolidacia
+    # (consolidate vyssie) OSTAVA — to su fakty dna, nie aforizmy.
+    # Reverzibilne: ZOL_ASCEND_ENABLED=1 v plist env oba zapne spat.
+    if os.environ.get("ZOL_ASCEND_ENABLED", "0") == "1":
+        ascended = ascend_higher(model=DREAM_MODEL)  # F8: dvihni L1->L2->L3
+        # C — SEN NAD GRAFOM: nad asociacnym grafom (related hrany z B) najdi husto
+        # prepojene komunity = vznikajuce temy a daj im strechu (abstrakt + parent
+        # hrany). Beh PO ascend, aby graf uz obsahoval aj cerstve parent hrany.
+        # Fail-open: chyba grafovej konsolidacie nezhodi sen.
+        try:
+            graph_abstracts = consolidate_graph(model=DREAM_MODEL)
+            ascended = (ascended or []) + graph_abstracts
+        except Exception as e:
+            log(f"consolidate_graph faza zlyhala (fail-open): {e!r}")
+            graph_abstracts = []
+    else:
+        ascended = []
         graph_abstracts = []
+        log("ascend/consolidate_graph VYPNUTE (Bug2 fix, ZOL_ASCEND_ENABLED!=1) — "
+            "vysoke vrstvy sa neplnia aforizmami")
     # P2 SEMANTICKY DEDUP (cesta A): opus najde parafrazove duplikaty, auto-merge
     # so zachrannou stopou (state/dedup_trash.jsonl). Beh PO consolidate/ascend,
     # nech dedupuje aj cerstvo vzniknute L1/L2 koncepty.
     merges = []
+    blocked = []
     try:
         from dedup_dream import dedup
-        merges = dedup(model=DREAM_MODEL, dry_run=False, log_fn=log)
+        _dres = dedup(model=DREAM_MODEL, dry_run=False, log_fn=log)
+        merges = _dres.get("merges", [])
+        blocked = _dres.get("blocked", [])
     except Exception as e:
         log(f"dedup faza zlyhala (fail-open, pamat nedotknuta): {e!r}")
-    brief = write_brief(decay_res, episodes, distilled_l1, ascended=ascended, merges=merges)
+    # RECONCILE GUARD: po vsetkych nocnych mutaciach over drift 3 skladov
+    # (Lorentz/Gemma/index) a dopis zivych orphanov do indexu (--fix). Chyti
+    # tichy desync skor nez narastie. Fail-open: chyba guardu nezhodi sen.
+    reconcile = {}
+    try:
+        reconcile = run_reconcile()
+    except Exception as e:
+        log(f"reconcile faza zlyhala (fail-open): {e!r}")
+    # MEM_STORE SYNC: zosulad OBE kolekcie (lorentz+gemma) s indexom — realne zmaze
+    # duchov a doplni chybajuce ID, nech maju vzdy rovnaky zivy obsah. Idempotentny.
+    try:
+        run_sync()
+    except Exception as e:
+        log(f"sync faza zlyhala (fail-open): {e!r}")
+    brief = write_brief(decay_res, episodes, distilled_l1, ascended=ascended,
+                        merges=merges, reconcile=reconcile, blocked=blocked)
     log(f"sen OK | epizod={len(episodes)} | nove_L1={len(distilled_l1)} | "
-        f"vyssie={len(ascended)} | dedup_merge={len(merges)} | brief={os.path.basename(brief)}")
+        f"vyssie={len(ascended)} | dedup_merge={len(merges)} | "
+        f"dedup_blok={len(blocked)} | "
+        f"drift={reconcile.get('DRIFT')} | brief={os.path.basename(brief)}")
     return 0
 
 

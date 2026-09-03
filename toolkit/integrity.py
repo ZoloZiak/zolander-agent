@@ -16,11 +16,11 @@ import hashlib
 
 HOME = os.path.expanduser("~")
 FILES = {
-    "pub": os.path.join(HOME, "zolander/identity/zolander_ed25519.pub"),
-    "fingerprint": os.path.join(HOME, "zolander/identity/fingerprint.txt"),
+    "pub": os.path.join(HOME, "projects/zolander/identity/zolander_ed25519.pub"),
+    "fingerprint": os.path.join(HOME, "projects/zolander/identity/fingerprint.txt"),
 }
-MANIFEST = os.path.join(HOME, "zolander/identity/integrity.sha256")
-PRIV = os.path.join(HOME, "zolander/identity/zolander_ed25519.key")
+MANIFEST = os.path.join(HOME, "projects/zolander/identity/integrity.sha256")
+PRIV = os.path.join(HOME, "projects/zolander/identity/zolander_ed25519.key")
 
 
 def sha(path):

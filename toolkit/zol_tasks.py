@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """zol_tasks.py — durable task registry + cross-session awareness (R2+X1).
 
-JEDEN zdroj pravdy na disku: ~/zolander/state/tasks.json. Rieši dve veci naraz:
+JEDEN zdroj pravdy na disku: ~/projects/zolander/state/tasks.json. Rieši dve veci naraz:
 - CROSS-SESSION (X1): okná (WhatsApp, CLI) = zberné nádoby. Každé zapíše svoj stav sem;
   Zolander-konsolidátor vie o oboch → na "ako progres na noťase?" odpovie z registry.
 - DURABLE (R2): stav úlohy žije MIMO procesu. Keď proces padne (OOM/SIGTERM — dnešný
@@ -28,7 +28,7 @@ import datetime
 import fcntl
 import contextlib
 
-ROOT = os.path.expanduser("~/zolander")
+ROOT = os.path.expanduser("~/projects/zolander")
 STATE = os.path.join(ROOT, "state")
 TASKS = os.path.join(STATE, "tasks.json")
 LOCK = os.path.join(STATE, ".tasks.lock")

@@ -35,7 +35,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from zol_paths import NODE, HS, NODE_ENV  # prenositelne cesty (auto-detect)
 MEM_COL = "zol_mem"
-sys.path.insert(0, os.path.join(HOME, "projects", "zolander-data", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
 
 LAYER_RANK = {"L3": 3, "L2": 2, "L1": 1, "L0": 0}
 # ak by pamat narastla nad tento pocet, davkuj (opus prompt by bol privelky).
@@ -89,10 +89,12 @@ def _ask_opus(rows, model):
         raise _Timeout()
 
     old = signal.signal(signal.SIGALRM, _alarm)
-    signal.alarm(int(os.environ.get("ZOL_DEDUP_LLM_TIMEOUT", "180")))
+    signal.alarm(int(os.environ.get("ZOL_DEDUP_LLM_TIMEOUT", "200")))
     try:
+        # max_tokens 2000: davka s prekryvom vrati o nieco viac skupin nez povodnych
+        # 1200 stacilo; 2000 = rezerva aby sa JSON nikdy neusekol, bez plytvania.
         resp = chat(prompt, model=model, system=JUDGE_SYSTEM,
-                    max_tokens=1200, max_retries=2).strip()
+                    max_tokens=2000, max_retries=2).strip()
     except Exception:
         return [], {}  # fail-open: LLM timeout/chyba -> tato davka NIC nezmaze
     finally:
@@ -120,13 +122,72 @@ def _strength(r):
     return (lyr, sal)
 
 
+VERIFY_SYSTEM = (
+    "Si prisny pamatovy audit. Dostanes dva zaznamy A (KEEPER) a B (KANDIDAT na "
+    "zmazanie). Odpovedz LEN 'ANO' alebo 'NIE'.\n"
+    "'ANO' = KEEPER A obsahuje VSETKY konkretne informacie z B (mena, cisla, "
+    "adresy, citacie, datumy, detaily) — teda zmazat B NESPOSOBI ziadnu stratu "
+    "informacie, lebo vsetko z B uz je v A.\n"
+    "'NIE' = B obsahuje COKOLVEK (aj jediny detail/cislo/meno/nuansu), co v A nie je, "
+    "ALEBO su to o inej veci. Pri najmensej pochybnosti odpovedz NIE.\n"
+    "Len jedno slovo: ANO alebo NIE."
+)
+
+
+def _is_superset(keeper, cand, model):
+    """Fail-closed brana: vrati True LEN ked opus potvrdi, ze keeper obsahuje VSETKO
+    z kandidata (zmazanie kandidata = ziadna strata info). Akakolvek chyba/pochybnost
+    -> False (rasej nezmaz nez straC fakt). Toto je poistka proti tomu, ze dedup-sudca
+    zle zoskupi (2026-09-02: zmazal by bohatsi 389/494, alebo cudzi fakt 382)."""
+    import signal
+    from palantir_client import chat
+    kt = keeper.get("text", "")
+    ct = cand.get("text", "")
+    if not kt or not ct:
+        return False
+    # trivialne bezpecne: keeper doslovne obsahuje cely text kandidata
+    if ct.strip() and ct.strip() in kt:
+        return True
+    prompt = (f"A (KEEPER):\n{kt}\n\nB (KANDIDAT na zmazanie):\n{ct}\n\n"
+              "Obsahuje A vsetky informacie z B? ANO alebo NIE:")
+
+    class _T(Exception):
+        pass
+
+    def _al(s, f):
+        raise _T()
+
+    old = signal.signal(signal.SIGALRM, _al)
+    signal.alarm(int(os.environ.get("ZOL_DEDUP_VERIFY_TIMEOUT", "60")))
+    try:
+        r = chat(prompt, model=model, system=VERIFY_SYSTEM,
+                 max_tokens=8, max_retries=2).strip().upper()
+    except Exception:
+        return False  # fail-CLOSED: chyba verifikacie -> nezmaz
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
+    return r.startswith("ANO")
+
+
 def _del_point(pid):
+    # FIX (2026-08-30): mazat z Lorentz zol_mem AJ z zol_mem_gemma. Predtym len
+    # Lorentz -> kazdy dream merge nechal ZOMBIE (mrtvy v Lorentz, zivy v Gemma,
+    # BM25/Gemma ho stale serviroval). Lorentz je autorita: ked ten padne, Gemmu
+    # neriesime (zaznam ostava, skusi sa nabuduce). Gemma del je fail-soft.
     try:
         p = subprocess.run([NODE, HS, "del", MEM_COL, str(pid)],
                            capture_output=True, text=True, env=NODE_ENV, timeout=30)
-        return p.returncode == 0 and '"deleted":true' in p.stdout
+        lor_ok = p.returncode == 0 and '"deleted":true' in p.stdout
     except subprocess.TimeoutExpired:
         return False  # visiaci gRPC del nezhodi cely beh; zaznam ostane (dram nabuduce)
+    if lor_ok:
+        try:
+            subprocess.run([NODE, HS, "del", "zol_mem_gemma", str(pid)],
+                           capture_output=True, text=True, env=NODE_ENV, timeout=30)
+        except subprocess.TimeoutExpired:
+            pass  # Gemma zombie < strata; reconcile_guard ho nabuduce chyti
+    return lor_ok
 
 
 def _trash(r, reason, kept_id):
@@ -145,12 +206,21 @@ def dedup(model="opus", dry_run=False, log_fn=None):
     deadline = _t.time() + int(os.environ.get("ZOL_DEDUP_MAX_SEC", "600"))
     rows = load_index()
     if len(rows) < 2:
-        return []
+        return {"merges": [], "blocked": []}
     byid = {r["id"]: r for r in rows}
 
-    # davkuj ak velka pamat (kazda davka samostatne opus volanie)
+    # PREKRYVAJUCE DAVKY (empiricky zvoleny default 2026-09-02): davky s prekryvom,
+    # aby duplikat na hranici padol do aspon jednej davky CELY. Dedup cez removed set
+    # nizsie znesie, ze sa par objavi vo viacerych davkach.
+    #
+    # PRECO NIE single-pass (cely zoznam naraz): OTESTOVANE na 597 faktoch — cely
+    # zoznam naraz nasiel 0 skupin, prekryvajuce davky 5. Velky kontext = opus spravi
+    # PLYTKY prechod (lenivie). Mensia davka ho donuti citat pozorne. Skutocna chyba
+    # povodneho kodu nebolo davkovanie ale CHYBAJUCI PREKRYV (hranica davky = slepa skvrna).
     all_groups, reasons = [], {}
-    for i in range(0, len(rows), BATCH):
+    overlap = max(1, BATCH // 4)
+    step = BATCH - overlap
+    for i in range(0, len(rows), step):
         if _t.time() > deadline:
             _log("wall-clock strop pri opus davkach — koncim skenovanie")
             break
@@ -158,10 +228,13 @@ def dedup(model="opus", dry_run=False, log_fn=None):
         g, rs = _ask_opus(chunk, model)
         all_groups.extend(g)
         reasons.update(rs)
-        _log(f"davka {i // BATCH}: {len(chunk)} spomienok -> {len(g)} skupin")
+        _log(f"davka @{i} (batch {BATCH}, overlap {overlap}): {len(chunk)} spomienok -> {len(g)} skupin")
+        if i + BATCH >= len(rows):
+            break
 
     removed = set()
     merges = []
+    blocked = []
     for group in all_groups:
         if _t.time() > deadline:
             _log("wall-clock strop pri mazani — koncim (zvysok nabuduce)")
@@ -169,7 +242,10 @@ def dedup(model="opus", dry_run=False, log_fn=None):
         members = [byid[g] for g in group if g in byid and g not in removed]
         if len(members) < 2:
             continue
-        keeper = max(members, key=_strength)
+        # KEEPER = najBOHATSI (najdlhsi text), pri zhode vyssia vrstva/salience.
+        # PRECO NIE salience: 2026-09-02 salience-vyber zmazal by bohatsi 389/494 a
+        # nechal chudobnejsi. Bohatsi zaznam skoro vzdy = superset -> bezpecne nechat.
+        keeper = max(members, key=lambda r: (len(r.get("text", "")), _strength(r)))
         kid = keeper["id"]
         for m in members:
             if m["id"] == kid:
@@ -177,9 +253,17 @@ def dedup(model="opus", dry_run=False, log_fn=None):
             reason = reasons.get(str(m["id"])) or reasons.get(m["id"]) or "duplikat"
             merge = {"kept": kid, "removed": m["id"],
                      "removed_text": m.get("text", "")[:90], "reason": reason}
+            # FAIL-CLOSED SUPERSET BRANA: zmaz LEN ked keeper dokazatelne obsahuje
+            # VSETKO z kandidata. Chrani pred zlym zoskupenim sudcu (cudzi fakt /
+            # bohatsi kandidat). Chyba/pochybnost/timeout -> nezmaz.
+            if not _is_superset(keeper, m, model):
+                _log(f"SUPERSET NIE {m['id']} !<= {kid} — NEmazem (chranim info) ({reason})")
+                blocked.append({"kept": kid, "blocked": m["id"],
+                                "blocked_text": m.get("text", "")[:90], "reason": reason})
+                continue
             if dry_run:
-                merges.append({**merge, "dry_run": True})
-                _log(f"[dry] dup {m['id']}->{kid} ({reason})")
+                merges.append({**merge, "dry_run": True, "superset_ok": True})
+                _log(f"[dry] dup {m['id']}->{kid} superset_ok ({reason})")
                 continue
             # del PRV, trash az po uspesnom zmazani (inak by trash mal zaznam co
             # v DB ostal = false recovery). Poradie: over zmazanie -> potom stopa.
@@ -210,12 +294,15 @@ def dedup(model="opus", dry_run=False, log_fn=None):
                     f.write(json.dumps(r, ensure_ascii=False) + "\n")
         except Exception as e:
             _log(f"index sync zlyhal: {e!r}")
-    return merges
+    _log(f"HOTOVO: zlucene={len(merges)} zablokovane_branou={len(blocked)}")
+    return {"merges": merges, "blocked": blocked}
 
 
 if __name__ == "__main__":
     dry = "--dry-run" in sys.argv
     res = dedup(model=os.environ.get("DREAM_MODEL", "opus"),
                 dry_run=dry, log_fn=lambda m: print(m, file=sys.stderr))
-    print(json.dumps({"merges": res, "count": len(res), "dry_run": dry},
+    print(json.dumps({"merges": res["merges"], "count": len(res["merges"]),
+                      "blocked": res["blocked"], "blocked_count": len(res["blocked"]),
+                      "dry_run": dry},
                      ensure_ascii=False, indent=2))

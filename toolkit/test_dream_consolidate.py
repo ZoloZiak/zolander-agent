@@ -5,7 +5,7 @@ vyprodukuju 2 samostatne CISTE L1, nie 1 rozmazany.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolander-data", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolander-data","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolander-data","toolkit"))
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "__PROJECT__", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","__PROJECT__","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"__PROJECT__","toolkit"))
 import zolander_dream as d
 
 # 4 epizody: 2 o zdravi/behu, 2 o kode/debugovani. Rozne temy.

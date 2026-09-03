@@ -22,14 +22,14 @@ import subprocess
 import datetime
 
 HOME = os.path.expanduser("~")
-STATE = os.path.join(HOME, "zolander", "state")
-TOOLKIT = os.path.join(HOME, "zolander", "toolkit")
-VPY = os.path.join(HOME, "zolander", ".venv-yar", "bin", "python")
+STATE = os.path.join(HOME, "projects", "zolander", "state")
+TOOLKIT = os.path.join(HOME, "projects", "zolander", "toolkit")
+VPY = os.path.join(HOME, "projects", "zolander", ".venv-yar", "bin", "python")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 GOLD = os.path.join(STATE, "mem_eval_gold.json")
 HIST = os.path.join(STATE, "eval_history.jsonl")
 NOTIFY = os.path.join(TOOLKIT, "zolander_notify.py")
-LOG = os.path.join(HOME, "zolander", "logs", "eval_watch.log")
+LOG = os.path.join(HOME, "projects", "zolander", "logs", "eval_watch.log")
 
 EVAL_DROP = float(os.environ.get("EVAL_DROP", "0.05"))
 EVAL_GROWTH = int(os.environ.get("EVAL_GROWTH", "60"))

@@ -33,9 +33,9 @@ import sys
 import json
 import math
 
-# palantir_client (chat/LLM) zije v zolander-data/toolkit; embedding je ODDELENY
+# palantir_client (chat/LLM) zije v __PROJECT__/toolkit; embedding je ODDELENY
 # subprocess do VENV_YAR (torch tam, nie tu).
-sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolander-data", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolander-data","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolander-data","toolkit"))
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "__PROJECT__", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","__PROJECT__","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"__PROJECT__","toolkit"))
 
 HOME = os.path.expanduser("~")
 ROOT = os.path.join(HOME, "projects", "zolander")

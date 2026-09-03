@@ -26,7 +26,7 @@ import sys
 import re
 import json
 
-sys.path.insert(0, os.path.expanduser("~/zolander-data/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
 
 TRIO = ("opus", "gpt", "gemini")
 AGG = os.environ.get("ZOL_EVAL_AGG", "min")  # min (prísne) | avg
@@ -102,10 +102,23 @@ def evaluate(zadanie, odpoved, generator, eval_system=None):
     if not scores:
         # oba judge zlyhali -> fail-open: nevieme skórovať, vráť None celkom
         return {"celkom": None, "generator": generator, "judges": judges,
-                "per_judge": per_judge, "note": "vsetci judgeri zlyhali"}
+                "per_judge": per_judge, "note": "vsetci judgeri zlyhali",
+                "scale_audit": {"verdict": "NO_DATA", "n": 0, "censored": False,
+                                "reason": "ziadne parsovatelne judge skore"}}
     agg = min(scores) if AGG == "min" else round(sum(scores) / len(scores), 3)
-    return {"celkom": agg, "agg": AGG, "n_judges": len(scores),
-            "generator": generator, "judges": judges, "per_judge": per_judge}
+    # judge-scale audit (2608.27309): je konsenzus falošne vysoký lebo judgeovia
+    # nalepili skóre na okraj škály? Nemení agregáciu — pridáva varovný verdikt.
+    scale_audit = None
+    try:
+        from judge_scale import audit as _scale_audit
+        scale_audit = _scale_audit(scores, lo=0.0, hi=1.0)
+    except Exception:
+        scale_audit = None  # fail-open: audit nesmie zhodiť skórovanie
+    out = {"celkom": agg, "agg": AGG, "n_judges": len(scores),
+           "generator": generator, "judges": judges, "per_judge": per_judge}
+    if scale_audit is not None:
+        out["scale_audit"] = scale_audit
+    return out
 
 
 def refine_loop(zadanie, generator="opus", threshold=0.75, max_rounds=2):

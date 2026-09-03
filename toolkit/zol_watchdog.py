@@ -18,7 +18,7 @@ import datetime
 import subprocess
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "zolander")
+ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 HEARTBEAT = os.path.join(STATE, "heartbeat.txt")
 LEDGER = os.path.join(STATE, "watchdog_ledger.txt")
