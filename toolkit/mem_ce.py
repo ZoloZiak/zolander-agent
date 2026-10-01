@@ -63,6 +63,6 @@ if __name__ == "__main__":
     cands = [
         {"id": 1, "text": "IZBY na prenajom projekt zolander-rooms pri praci"},
         {"id": 2, "text": "HyperspaceDB kontajner na porte 50051"},
-        {"id": 3, "text": "izby pokoj prenajom lokalita byt"},
+        {"id": 3, "text": "izby pokoj prenajom example district mieszkanie"},
     ]
     print(rerank_ce(q, cands))

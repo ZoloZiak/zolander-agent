@@ -187,7 +187,7 @@ def t_chapter(p):
                            pattern=p["cite_pattern"], min=int(p.get("min_cites", 1))))
     else:
         skipped.append("cites-atoms: chyba 'cite_pattern' (nekontrolujem citacie atomov)")
-    # leak-gate: ziadne realne mena/cesty/detaily z prace (gateway sanit pravidlo)
+    # leak-gate: ziadne realne mena/cesty/detaily z prace (peer/gateway sanit pravidlo)
     leaks = _as_list(p.get("leaks")) + _SANIT_DEFAULT
     anchors.append(_mk("no-leak", "not_contains", "artifact", on_fail="leak",
                        path=path, must_not=leaks, regex=True))

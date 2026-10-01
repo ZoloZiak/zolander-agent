@@ -9,7 +9,8 @@ Tieto opus skore su DVOJUCELOVE: (1) polomer pre hyperbola/product-space test,
 (2) treningove data pre Option 2 radialnu hlavu Gemma768->r. Nic sa neplytva."""
 import json, os, sys, urllib.request, time
 
-sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from palantir_client import chat
 
 STATE = os.path.expanduser("~/projects/zolander/state")

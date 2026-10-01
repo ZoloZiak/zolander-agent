@@ -13,7 +13,8 @@ Beh: cez palantir_client (stdlib urllib, SSL fix v kliente). Model default gpt-m
 (rychly, lacny; gate je o konzistencii nie o "spravnej" hodnote)."""
 import json, os, sys, random, statistics, argparse
 
-sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from palantir_client import chat
 
 STATE = os.path.expanduser("~/projects/zolander/state")

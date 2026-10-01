@@ -13,7 +13,7 @@ HOME = os.path.expanduser("~")
 ROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ROOT, "state")
 IDX = os.path.join(STATE, "mem_index.jsonl")
-sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
 sys.path.insert(0, os.path.join(ROOT, "toolkit"))
 
 import mem_store  # noqa: E402

@@ -256,6 +256,34 @@ def reparent(dead_id, keeper_id):
             "dropped_cycle": dropped_cycle, "edges_after": len(out)}
 
 
+def detach(dead_id, *, trash_path=None):
+    """Zmaz VSETKY hrany dotykajuce sa dead_id z grafu (BEZ keepera).
+
+    Pouzitie: archivacia uzla ktory NEMA naslednika (reparent vyzaduje keeper).
+    Bez detachu by soft-del uzla nechal висiace hrany = orphany (lekcia id=1078:
+    dedup nechal 58 orphanov). Toto je cisty protejsok reparent pre pripad "uzol
+    proste zmizne".
+
+    Reverzibilne: odstranene hrany sa (ak trash_path) zapisu do JSONL trashu, takze
+    sa daju obnovit spolu s archivovanym zaznamom.
+    Idempotentne: druhy beh na uzle bez hran vrati removed=0.
+    Vracia {dead, removed, edges_after}.
+    """
+    edges = _read(EDGES)
+    keep, removed = [], []
+    for e in edges:
+        if e.get("from") == dead_id or e.get("to") == dead_id:
+            removed.append(e)
+        else:
+            keep.append(e)
+    if removed:
+        if trash_path:
+            for e in removed:
+                _append(trash_path, {"detached_from": dead_id, "edge": e, "ts": _now()})
+        _rewrite_edges(keep)
+    return {"dead": dead_id, "removed": len(removed), "edges_after": len(keep)}
+
+
 def _set_temporal(mid, **fields):
     """Append temporalny zapis (posledny vyhrava pri citani)."""
     rec = {"id": mid, "ts": _now()}

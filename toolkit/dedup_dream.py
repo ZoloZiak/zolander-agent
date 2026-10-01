@@ -33,9 +33,10 @@ IDX = os.path.join(STATE, "mem_index.jsonl")
 TRASH = os.path.join(STATE, "dedup_trash.jsonl")
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from zol_paths import NODE, HS, NODE_ENV  # prenositelne cesty (auto-detect)
 MEM_COL = "zol_mem"
-sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
 
 LAYER_RANK = {"L3": 3, "L2": 2, "L1": 1, "L0": 0}
 # ak by pamat narastla nad tento pocet, davkuj (opus prompt by bol privelky).

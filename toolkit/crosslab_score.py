@@ -11,7 +11,8 @@ polomer (OpenAI) a gold (Anthropic) su z roznych labov -> self-konzistencia vylu
 """
 import json, os, sys, argparse
 
-sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from palantir_client import chat
 
 STATE = os.path.expanduser("~/projects/zolander/state")

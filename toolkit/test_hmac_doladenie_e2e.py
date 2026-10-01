@@ -9,7 +9,7 @@ import json, subprocess, os, sys, time
 
 VPY = "/Users/__USER__/projects/zolander/.venv-yar/bin/python"
 ZM = "/Users/__USER__/projects/zolander/toolkit/zol_mem.py"
-HS = "/Users/__USER__/projects/__PROJECT__/toolkit/hs.mjs"
+HS = "/Users/__USER__/projects/zolo2.0/toolkit/hs.mjs"
 NODE = "/Users/__USER__/Applications/homebrew/bin/node"
 NODE_PATH = "/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules"
 TK = "/Users/__USER__/projects/zolander/toolkit"
@@ -39,13 +39,13 @@ def embed(text):
 def hs_insert(col, rec):
     env = dict(os.environ, NODE_PATH=NODE_PATH)
     r = subprocess.run([NODE, HS, "insert", col], input=rec, capture_output=True, text=True,
-                       cwd="/Users/__USER__/projects/__PROJECT__/toolkit", env=env)
+                       cwd="/Users/__USER__/projects/zolo2.0/toolkit", env=env)
     return r.stdout.strip(), r.stderr[-200:]
 
 def hs_del(col, mid):
     env = dict(os.environ, NODE_PATH=NODE_PATH)
     subprocess.run([NODE, HS, "del", col, str(mid)], capture_output=True, text=True,
-                   cwd="/Users/__USER__/projects/__PROJECT__/toolkit", env=env)
+                   cwd="/Users/__USER__/projects/zolo2.0/toolkit", env=env)
 
 fails = []
 ids_to_clean = []

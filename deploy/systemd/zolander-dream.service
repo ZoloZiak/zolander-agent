@@ -1,0 +1,14 @@
+[Unit]
+Description=Zolander nightly dream consolidation
+# Portable systemd USER unit. bootstrap.sh renders __PY__/__ROOT__ for you and
+# installs this under ~/.config/systemd/user/. Enable with:
+#   systemctl --user daemon-reload && systemctl --user enable --now zolander-dream.timer
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT__
+# keep the toolkit importable + point scripts at the right places
+Environment=PYTHONPATH=__ROOT__/toolkit
+ExecStart=__PY__ __ROOT__/toolkit/zolander_dream.py
+StandardOutput=append:__ROOT__/logs/dream.out.log
+StandardError=append:__ROOT__/logs/dream.err.log

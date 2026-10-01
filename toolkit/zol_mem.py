@@ -364,9 +364,10 @@ def cmd_remember():
 
 def _gemma_query(query, fetch):
     """3. lens: EmbeddingGemma cosine cez perzistentny daemon (:8901) + hs search na
-    kolekcii zol_mem_gemma. FAIL-OPEN: ak daemon/kolekcia nebezi, vrat [] (recall bezi
-    dalej na bm25+yar). Vypnutelne obj['no_gemma'] / env ZOL_RECALL_GEMMA=0.
-    Vrat [(id, cosine_score)]."""
+    kolekcii zol_mem_gemma. Vrat (hits, err): hits=[(id, cosine_score)], err=None pri
+    uspechu alebo kratky retazec pri zlyhani. Volajuci (cmd_recall) rozhodne co s err
+    cez recall_health — TU uz NIE fail-open ticho (to bola diera: Gemma padala neviditelne).
+    Vypnutelne obj['no_gemma'] / env ZOL_RECALL_GEMMA=0."""
     import urllib.request
     port = os.environ.get("GEMMA_EMBED_PORT", "8901")
     try:
@@ -377,9 +378,9 @@ def _gemma_query(query, fetch):
             vec = json.loads(r.read())["vectors"][0]
         res = hs("search", "zol_mem_gemma", fetch, stdin=json.dumps({"vector": vec})) or []
         # cosine kolekcia: mensia distance = blizsie; skore = 1/(1+dist)
-        return [(x.get("id"), 1.0 / (1.0 + x.get("distance", 9e9))) for x in res]
-    except Exception:
-        return []  # fail-open
+        return [(x.get("id"), 1.0 / (1.0 + x.get("distance", 9e9))) for x in res], None
+    except Exception as e:
+        return [], str(e)[-200:]  # NIE ticho — err ide do degraded ledgera
 
 
 def _filter_active_records(records, include_inactive=False, active_fn=None):
@@ -415,6 +416,49 @@ def _filter_active_records(records, include_inactive=False, active_fn=None):
         if active or keep_inactive:
             out.append(nr)
     return out
+
+
+_DORMANT_STATES = {"dormant", "retired_candidate", "retired"}
+
+
+def _forget_state_map():
+    """Mapa id -> forget_state z mem_index.jsonl (AUTORITATIVNY zdroj stavu).
+
+    DB (hs search) NEVIE o forget_state — server drzi len vektory + STATICKE meta
+    zo zapisu (meta.salience ostane 0.7 aj ked epizoda medzitym dormantla na 0.0).
+    Preto sa dormant filter NESMIE spoliehat na meta z DB; cita sa z indexu, ktory
+    decay aktualizuje. Fail-open: chyba pri citani => prazdna mapa (nefiltruje sa,
+    lepsie nez ticho stratit recall).
+    """
+    m = {}
+    idx = os.path.join(STATE, "mem_index.jsonl")
+    try:
+        for line in open(idx, encoding="utf-8"):
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            if "id" in r:
+                m[r["id"]] = r.get("forget_state", "active")
+    except Exception:
+        return {}
+    return m
+
+
+def _filter_dormant(records, include_dormant=False):
+    """Vyhod dormant/retired epizody z recall kandidatov (VSETKY vetvy: bm25/yar/gemma).
+
+    BM25 filter (mem_lexical) chyti len lexikalnu vetvu; semantic (DB) a gemma vetvy
+    vsak vratia dormant zaznam s plnym meta.salience z DB a unified boost ho neutlmi.
+    Tento filter je jednotny gate PO fuzii, citajuci stav z indexu. Vypnutelne
+    include_dormant=True (audit/eval) alebo env ZOL_RECALL_INCLUDE_DORMANT=1.
+    """
+    if include_dormant or os.environ.get("ZOL_RECALL_INCLUDE_DORMANT", "0") == "1":
+        return records
+    fmap = _forget_state_map()
+    if not fmap:
+        return records  # fail-open: bez mapy nefiltruj
+    return [r for r in records if fmap.get(r.get("id"), "active") not in _DORMANT_STATES]
 
 
 def _apply_query_route(candidates, query, obj, temporal_state=None,
@@ -662,18 +706,42 @@ def cmd_recall():
     # obj["no_lexical"]=true alebo env ZOL_RECALL_LEXICAL=0.
     vec = embed_one(query)
     fetch = topk * 4  # vytiahni sirsie, po zluceni + filtri orez na topk
+    # FAIL-HANDLING ZJEDNOTENE (2026-10-01, veducko): vsetky vetvy zbieraju zlyhania
+    # do JEDNEHO `degraded` dictu {lens: dovod}. Rozhodnutie co s nim (self-heal + notify
+    # + informovanie LLM) je na JEDNOM mieste — recall_health.report() na konci. Predtym
+    # bol fail-handling na 5 miestach s 3 roznymi politikami (embed crash, YAR fail-closed,
+    # BM25/Gemma/rerank ticho) — Gemma vypadok bol NEVIDITELNY, to bola realna diera.
+    degraded = {}
+    # YAR embed query (diera #1: predtym BEZ ochrany pred try-blokom -> tvrdy crash
+    # celeho recallu ked YAR model padne). Teraz chranene: ked embed zlyha, YAR vetva
+    # odpadne (vec=None -> search sa preskoci), ale BM25 (subor) + Gemma (vlastny daemon
+    # embed) bezia dalej. Zaznamena sa do degraded.
+    try:
+        vec = embed_one(query)
+    except Exception as e:
+        vec = None
+        degraded["yar_embed"] = str(e)[-200:]
     # FAIL-CLOSED (2026-08, A2A peer lekcia): backend pad NESMIE vyzerat
     # ako "0 spomienok". Ked search RuntimeError (DB down/unreachable), NEvrat ticho
     # prazdny zoznam — vrat explicitny backend_error objekt, nech volajuci (dream,
     # writeback, initiative, priamy recall) vie ROZLISIT "naozaj nic" od "DB je dole"
     # a nekona naslepo s domnienkou prazdnej pamate.
-    try:
-        res = hs("search", MEM_COL, fetch, stdin=json.dumps({"vector": vec})) or []
-        backend_ok = True
-    except RuntimeError as e:
+    _backend_err = None
+    if vec is None:
+        # YAR embed uz zlyhal (degraded['yar_embed']) -> search sa neda spustit.
+        # backend_ok ostava True (DB moze byt ziva, len nemame query vektor) — Gemma
+        # pojde cez vlastny embed, BM25 cez subor. YAR search sa proste preskoci.
         res = []
-        backend_ok = False
-        _backend_err = str(e)[-300:]
+        backend_ok = True
+    else:
+        try:
+            res = hs("search", MEM_COL, fetch, stdin=json.dumps({"vector": vec})) or []
+            backend_ok = True
+        except RuntimeError as e:
+            res = []
+            backend_ok = False
+            _backend_err = str(e)[-300:]
+            degraded["db"] = _backend_err
     for r in res:
         r["col"] = MEM_COL
 
@@ -684,17 +752,22 @@ def cmd_recall():
         try:
             from mem_lexical import search as lex_search
             lex = lex_search(query, topk=fetch)  # [(id, score, doc)]
-        except Exception:
-            lex = []  # fail-open: lexikalna vrstva nikdy nezhodi recall
+        except Exception as e:
+            lex = []  # recall bezi dalej na YAR+Gemma, ale uz NIE ticho
+            degraded["bm25"] = str(e)[-200:]
 
     # --- SCORE FUZIA (min-max norm), NIE RRF ---
     # RRF (rank-based) tu zlyhava (namerane 3x): odmenuje konsenzus, sumove zaznamy
     # v OBOCH rebrickoch stredne vysoko predbehnu silny signal v JEDNOM. Preto min-max
-    # score fusion s vahami. Vahy = zmerane optimum (mem_gemma_tune.py 2026-08-14):
-    # bm25=1.6, yar=1.0, gemma=0.8. Gemma je 3. lens (EmbeddingGemma cosine), FAIL-OPEN.
+    # score fusion s vahami. Vahy = zmerane optimum. bm25=1.6, yar=1.0.
+    # W_GEM RE-TUNE 2026-09-29: povodne 0.8 (mem_gemma_tune.py 2026-08-14) bolo tunene
+    # KED bola zol_mem_gemma kolekcia zo 70% prazdna (dual-write dieru, opravene backfillom).
+    # Po oprave (100% pokrytie) W_GEM sweep na v2 gold (103 ot., realny cmd_recall):
+    #   bez gemma R@1 0.728 | W=0.8 0.816 | W=1.5 0.845 (vrchol R@1+MRR) | W=2.0 0.835 | W=3.0 0.825
+    # -> default zdvihnuty na 1.5. Gemma je 3. lens (EmbeddingGemma cosine), FAIL-OPEN.
     W_SEM = float(os.environ.get("ZOL_RECALL_W_SEM", "1.0"))
     W_LEX = float(os.environ.get("ZOL_RECALL_W_LEX", "1.6"))
-    W_GEM = float(os.environ.get("ZOL_RECALL_W_GEM", "0.8"))
+    W_GEM = float(os.environ.get("ZOL_RECALL_W_GEM", "1.5"))
 
     def _norm(pairs):
         # pairs: list[(id, raw_score)], vyssie=lepsie. Vrat {id: norm[0..1]}.
@@ -706,10 +779,15 @@ def cmd_recall():
             return {i: 1.0 for i, _ in pairs}
         return {i: (s - lo) / (hi - lo) for i, s in pairs}
 
-    # 3. lens: Gemma (fail-open, vypnutelne)
+    # 3. lens: Gemma (vypnutelne; zlyhanie uz NIE ticho — ide do degraded)
     use_gem = (not obj.get("no_gemma")
                and os.environ.get("ZOL_RECALL_GEMMA", "1") != "0")
-    gem = _gemma_query(query, fetch) if use_gem else []
+    if use_gem:
+        gem, _gem_err = _gemma_query(query, fetch)
+        if _gem_err:
+            degraded["gemma"] = _gem_err
+    else:
+        gem = []
 
     sem_norm = _norm([(r.get("id"), 1.0 / (1.0 + r.get("distance", 9e9))) for r in res])
     lex_norm = _norm([(mid, sc) for mid, sc, _ in lex])
@@ -726,12 +804,44 @@ def cmd_recall():
                                              "layer": doc.get("layer"),
                                              "ts": doc.get("ts")},
                                     "distance": None, "lexical_only": True})
+    # GEMMA-UNIQUE (fix 2026-09-30): zaznamy ktore nasla LEN Gemma (nie YAR, nie BM25)
+    # by BEZ tohto loopu prepadli — fused_score iteruje len meta_by_id, takze Gemma by
+    # vedela len RE-RANKOVAT existujuce nalezy, nie prispiet vlastny retrieval. Namerane
+    # na v2 gold: 15/103 targetov Gemma chytila ale fuzia ich zahadzovala. Dolož meta
+    # z mem_index (plny text + salience pre importance boost). Index citame len ak
+    # naozaj nieco chyba (gem_missing neprazdne). Vypnutelne ZOL_RECALL_GEMMA_UNIQUE=0.
+    if os.environ.get("ZOL_RECALL_GEMMA_UNIQUE", "1") != "0":
+        gem_missing = [gid for gid, _ in gem if gid not in meta_by_id]
+        if gem_missing:
+            _gidx = _graph_index_by_id()
+            for gid in gem_missing:
+                row = _gidx.get(gid)
+                if not row:
+                    continue
+                meta_by_id[gid] = {"id": gid, "col": MEM_COL,
+                                   "meta": {"text": row.get("text", ""),
+                                            "kind": row.get("kind"),
+                                            "memory_type": row.get("kind"),
+                                            "layer": row.get("layer"),
+                                            "salience": row.get("salience"),
+                                            "ts": row.get("ts")},
+                                   "distance": None, "gemma_only": True}
 
+    # GEMMA-UNIQUE discount: solo nalezy (videla ich LEN Gemma, nie YAR/BM25) su slabsi
+    # signal nez konsenzus. Dostanu plnu W_GEM relevanciu, ale finalne skore sa tlmi
+    # faktorom GEM_SOLO (<1), aby zvysili HLBKU recallu (found/R@5) bez prevalcovania
+    # top-1 (R@1). Sweep v2 gold: OFF R@1 0.495/found 74 | SOLO=1.0 R@1 0.456/found 82
+    # | SOLO=0.8 R@1 0.485/R@5 0.728/MRR 0.587/found 82 (optimum: MRR najvyssie, R@1
+    # strata -0.010 = 1 query v HNSW sume). Default 0.8. Vypnutelne ZOL_RECALL_GEMMA_UNIQUE=0.
+    GEM_SOLO = float(os.environ.get("ZOL_RECALL_GEM_SOLO", "0.8"))
     fused_score = {}
     for mid in meta_by_id:
-        fused_score[mid] = (W_SEM * sem_norm.get(mid, 0.0)
-                            + W_LEX * lex_norm.get(mid, 0.0)
-                            + W_GEM * gem_norm.get(mid, 0.0))
+        base = (W_SEM * sem_norm.get(mid, 0.0)
+                + W_LEX * lex_norm.get(mid, 0.0)
+                + W_GEM * gem_norm.get(mid, 0.0))
+        if meta_by_id[mid].get("gemma_only"):
+            base *= GEM_SOLO
+        fused_score[mid] = base
 
     # --- UNIFIED SKORE (Generative Agents, Park 2023): finalne = relevance * recency
     # * importance. Relevance = fuzia lensov (hore). Recency = exp. decay podla veku ts.
@@ -812,6 +922,12 @@ def cmd_recall():
 
     cand = _filter_active_records(cand, include_inactive=bool(obj.get("include_inactive")))
 
+    # DORMANT GATE (A+B, 2026-09-26): vyhod dormant/retired epizody bez ohladu na
+    # to ktora vetva ich vratila (bm25 uz filtruje mem_lexical, ale semantic/gemma
+    # z DB nie — DB nevie o forget_state). Jednotny gate citajuci stav z indexu.
+    # Vypnutelne obj['include_dormant'] / env ZOL_RECALL_INCLUDE_DORMANT=1.
+    cand = _filter_dormant(cand, include_dormant=bool(obj.get("include_dormant")))
+
     # ŽL4 router → ŽL5 when_gate (temporal) / ŽL3 subtree (aggregate). Router beží
     # VŽDY (lacný, LLM-free), akcie AKTÍVNE default (kill-switch obj['route_disable']).
     # Fail-open: deps (temporal_state/index/subtree) sa načítajú lenivo; chyba =
@@ -874,8 +990,25 @@ def cmd_recall():
             for r in reranked:
                 r["reranked"] = True
             cand = reranked
+        except Exception as e:
+            degraded["rerank"] = str(e)[-200:]  # len poradie — recall bezi, ale NIE ticho
+
+    # ───────────────────────────────────────────────────────────────────────
+    # JEDNO MIESTO fail-handlingu: vsetky vetvy nahlasili zlyhania do `degraded`.
+    # recall_health.report() rozhodne (throttled): self-heal daemonov + notify +
+    # summary pre LLM. backend_down = ZIADNA retrieval vetva nevratila nic (true
+    # fail-closed: prazdno, nie "ziadne spomienky"). Fail-open: health vrstva
+    # nikdy nezhodi recall. (veducko 2026-10-01)
+    # ───────────────────────────────────────────────────────────────────────
+    total_outage = (not res and not lex and not gem)
+    health_msg = ""
+    if degraded:
+        try:
+            import recall_health
+            health_msg = recall_health.report(degraded, source=source,
+                                               backend_down=total_outage)
         except Exception:
-            pass  # fail-open: re-rank nikdy nezhodi recall
+            health_msg = ""
 
     # FAIL-CLOSED vystup: ked DB spadla, vysledky su DEGRADOVANE (chyba semantic+
     # gemma vrstva, ostala len lokalna BM25 nad mem_index.jsonl). Nezatajujeme to —
@@ -886,7 +1019,7 @@ def cmd_recall():
         print(json.dumps({
             "backend": "DOWN",
             "backend_error": _backend_err,
-            "degraded": "len lokalna BM25 (chyba semantic+gemma vrstva) — DB je nedostupna",
+            "degraded": health_msg or "len lokalna BM25 (chyba semantic+gemma vrstva) — DB je nedostupna",
             "results": results,
         }, ensure_ascii=False, indent=2))
         return
@@ -907,7 +1040,16 @@ def cmd_recall():
             })
         except Exception:
             pass
-    print(json.dumps(results, ensure_ascii=False, indent=2))
+    # VYSTUPNY KONTRAKT: default HOLY LIST (strojovi konzumenti patterns/diag/dream ho
+    # iteruju priamo). VYNIMKA: session-start recall (source=session_hook) je JEDINA
+    # LLM-facing cesta a format_recall_hits je dict-tolerantny -> ak je degradacia, zabal
+    # do dictu s `degraded` spravou, nech ju model VIDI a musi ju spomenut. Ostatne
+    # zdroje dostanu list aj pri degradacii (notify+self-heal uz zbehol, kontrakt drzi).
+    if health_msg and source == "session_hook":
+        print(json.dumps({"results": results, "degraded": health_msg},
+                         ensure_ascii=False, indent=2))
+    else:
+        print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
 def cmd_stats():

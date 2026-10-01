@@ -36,7 +36,8 @@ EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 # nocny automat nema kontext-limit problem). Prepisatelne cez DREAM_MODEL.
 DREAM_MODEL = os.environ.get("DREAM_MODEL", "opus")
 
-sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 sys.path.insert(0, os.path.join(ROOT, "toolkit"))  # cluster_llm
 
 

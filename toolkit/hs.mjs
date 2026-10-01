@@ -12,8 +12,13 @@
 //   node hs.mjs stats <collection>
 //
 // ENV: HYPERSPACE_HOST (default localhost:50051), HYPERSPACE_API_KEY (default '')
+//
+// The HyperspaceDB SDK is resolved by bare module name, so it works on any box as
+// long as it's installed and findable. bootstrap.sh installs it next to this file
+// (toolkit/node_modules) and sets NODE_PATH; you can also `npm i -g hyperspace-sdk-ts`
+// or point NODE_PATH at wherever it lives. No absolute paths baked in.
 
-import { HyperspaceClient } from '/Users/__USER__/.npm/_npx/9e13365ae4a6529c/node_modules/hyperspace-sdk-ts/dist/client.js';
+import { HyperspaceClient } from 'hyperspace-sdk-ts/dist/client.js';
 
 const HOST = process.env.HYPERSPACE_HOST || 'localhost:50051';
 const KEY = process.env.HYPERSPACE_API_KEY || '';

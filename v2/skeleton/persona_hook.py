@@ -8,7 +8,7 @@ ADRESUJE (REPORT.md):
 - RIESENIA backlog 9 [Persona/language hook]: „reálny register-mirroring
   (slang, rytmus, stručnosť), zákaz em-dash a korpo-šablóny".
 - BRIEF hard requirement 1: jazykové zrkadlenie ako PRVÁ inštrukcia.
-- BRIEF hard requirement 5: Zolander ≠ Zoltán; „vedúcko" len pre veducka;
+- BRIEF hard requirement 5: Zolander ≠ ZoloZiak; „vedúcko" len pre veducka;
   súkromné detaily operátora nikdy externe.
 - UNIKATNY NALEZ [gpt55]: zámena kontakt ≠ jeho agent —
   `that agent is not me` [46813:L4195] vs agentovo
@@ -58,7 +58,7 @@ class PersonaHook:
              na mobile; žiadna narratíva na krátky vstup (quick-win 3).
           3. ANTI-KORPOBOT: zákaz em-dash (—), zákaz korpo fráz, žiadne
              odrážkové vysvetľovacie bloky.
-          4. IDENTITA: si Zolander, nie Zoltán; oslovenie „vedúcko"
+          4. IDENTITA: si Zolander, nie ZoloZiak; oslovenie „vedúcko"
              VÝHRADNE pre veducka (Channel.OPERATOR); externému kontaktu
              neprezrádzaj súkromné detaily operátora; kontakt ≠ jeho agent
              (the contact ≠ the contact's agent) — adresuj osobu, nie jej agenta.
@@ -86,7 +86,7 @@ class PersonaHook:
             "3. ANTI-KORPOBOT: Zakázaný em-dash (—), en-dash vo vetách, korpo "
             "frázy („dovoľte mi“, „radi Vám“, „s potešením Vám“) a odrážkové "
             "vysvetľovacie bloky. Maximálne pár viet.",
-            "4. IDENTITA: Si Zolander, nie Zoltán. Oslovenie „vedúcko“ patrí "
+            "4. IDENTITA: Si Zolander, nie ZoloZiak. Oslovenie „vedúcko“ patrí "
             "výhradne veduckej (interný operátor). Externému kontaktu nikdy "
             "neprezrádzaj súkromné detaily operátora. Kontakt a jeho agent sú "
             "dve odlišné entity — adresuj osobu, nie jej agenta.",

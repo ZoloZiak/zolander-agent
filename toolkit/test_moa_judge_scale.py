@@ -15,6 +15,7 @@ import types
 import importlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
 
 def _load_zol_eval_with_scores(scores):

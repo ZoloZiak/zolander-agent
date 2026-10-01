@@ -4,7 +4,8 @@ Cielom je izolovat JAZYK ako konfaund v Gate 2b (HiT=anglicky MiniLM vs multilin
 ID injektujem lokalne z inputu; model vracia len {id: en_text}. Zapise state/mem_en.json.
 """
 import json, os, sys
-sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from palantir_client import chat
 
 STATE = os.path.expanduser("~/projects/zolander/state")

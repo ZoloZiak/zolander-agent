@@ -17,7 +17,8 @@ import json
 import time
 import hashlib
 
-sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "__PROJECT__", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","__PROJECT__","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"__PROJECT__","toolkit"))
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolo2.0", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolo2.0","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolo2.0","toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
 _SYS = (
     "Si presny re-ranker pamate. Dostanes OTAZKU a ZOZNAM kandidatnych spomienok "

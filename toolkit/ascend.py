@@ -51,9 +51,10 @@ ASCLOG = os.path.join(LOGS, "ascend.log")
 # empiricky ~1.0 = rozumny prah "ta ista tema" pre YAR v5 129D.
 LDIST_THRESHOLD = float(os.environ.get("ASCEND_LDIST", "1.0"))
 
-# palantir_client (chat/LLM pre distill) zije v __PROJECT__/toolkit; embedding ide
+# palantir_client (chat/LLM pre distill) zije v zolo2.0/toolkit; embedding ide
 # ODDELENE subprocessom do VENV_YAR (torch tam, nie tu).
-sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
 # rebrik: z coho na co, a aky kind ma vysledok
 # WRITE-GATE (Bug 2 fix, memory-distillation 2026-08-30): L2->L3 uz NEDAVA "identity".

@@ -12,7 +12,7 @@ prepisujeme; čo patrí inej vrstve, zahadzujeme.**
 |---|---|---|
 | `toolkit/a2a.py` | `skeleton/a2a_gate.py` | Kanonický podpis (JSON {from_fp, ts, body}, sort_keys), formát `known_peers/<fp>.pub`, Ed25519 verify — preberá sa 1:1. NOVÉ: drop-fast + dedup pred akoukoľvek analýzou (KONSENZUS #5). |
 | `toolkit/gen_identity.py` | identity layer (mimo skeletonu) | PEM PKCS8 kľúč + fingerprint.txt; ostáva, len prísnejšie umiestnenie a `.gitignore`. |
-| `toolkit/hook_matrix_persona.py` | `skeleton/persona_hook.py` | Idea (persona kontext per-kanál) ostáva; PREPÍSANIE obsahu inštrukcií: jazyk-mirror ako PRVÁ inštrukcia, anti-korpobot, identita Zolander ≠ Zoltán (KONSENZUS #6). |
+| `toolkit/hook_matrix_persona.py` | `skeleton/persona_hook.py` | Idea (persona kontext per-kanál) ostáva; PREPÍSANIE obsahu inštrukcií: jazyk-mirror ako PRVÁ inštrukcia, anti-korpobot, identita Zolander ≠ ZoloZiak (KONSENZUS #6). |
 | `toolkit/hook_cmd_guard.py` | `skeleton/cmd_guard_v2.py` | Hook mechanika ostáva; PREPIS: blacklist → whitelist (backlog 11) + audit log s exit kódmi/hashmi (backlog 13). |
 | `toolkit/zol_session.py`, `toolkit/zol_events.py` | `skeleton/state_machine.py` | Stav eventov sa presúva do idempotentného ledgeru s perzistenciou (KONSENZUS #4). |
 | `toolkit/hook_recall.py`, `toolkit/mem_*` (výber) | pamäťová vrstva (fáza 2) | Nechádza sa tak ako je; V2 ju len volá cez state_machine flagy. |

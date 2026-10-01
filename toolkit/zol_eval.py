@@ -26,7 +26,8 @@ import sys
 import re
 import json
 
-sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
 TRIO = ("opus", "gpt", "gemini")
 AGG = os.environ.get("ZOL_EVAL_AGG", "min")  # min (prísne) | avg

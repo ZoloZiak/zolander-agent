@@ -11,6 +11,7 @@ Ziadne initiative/dream hlasenie — to riesi gateway + ranny brief (bez duplici
 Fail-open: nikdy nezhodi daemon.
 """
 import os
+import re
 import sys
 import json
 import socket
@@ -27,10 +28,32 @@ INTEGRITY = os.path.join(ROOT, "toolkit", "integrity.py")
 PYBIN = "/usr/bin/python3"
 
 HEARTBEAT_MAX_MIN = 45  # loop tika kazdych 20 min -> 45 min ticha = problem
+WAKE_GRACE_MIN = 10     # tesne po prebudeni/boote daj loop+DB cas nabehnut (launchd tick + keepalive)
+SYSCTL = "/usr/sbin/sysctl"
 
 
 def now():
     return datetime.datetime.now()
+
+
+def machine_wake_age_min():
+    """Vek (min) od posledneho ozivenia Macu = max(wake, boot).
+    kern.waketime sa updatuje pri wake-from-sleep, kern.boottime pri boote;
+    berieme novsiu z nich. Format: '{ sec = N, usec = M } ...'.
+    Vrati None ak sa neda zistit -> fail-open, ziadna grace (radsej upozorni)."""
+    epochs = []
+    for key in ("kern.waketime", "kern.boottime"):
+        try:
+            p = subprocess.run([SYSCTL, "-n", key],
+                               capture_output=True, text=True, timeout=5)
+            m = re.search(r"sec\s*=\s*(\d+)", p.stdout or "")
+            if m:
+                epochs.append(int(m.group(1)))
+        except Exception:
+            pass
+    if not epochs:
+        return None
+    return (now().timestamp() - max(epochs)) / 60.0
 
 
 def heartbeat_age_min():
@@ -105,6 +128,15 @@ def main():
     ig = integrity_ok()
     if ig is False:
         problems["integrity"] = "integrity MISMATCH — identita nesedi, loop je fail-closed. Treba re-baseline."
+
+    # WAKE-GRACE: tesne po prebudeni/boote Macu launchd este netikol loop a DB
+    # keepalive sa este nezdvihla -> loop+db "vypadok" je len nabehove okno, nie porucha.
+    # Potlac IBA loop+db (nie integrity — to so spankom nesuvisi). Fail-open: ak sa
+    # wake-vek neda zistit (None), nepotlacaj nic (radsej falosny alert nez zmlcany realny).
+    wake_age = machine_wake_age_min()
+    if wake_age is not None and wake_age < WAKE_GRACE_MIN:
+        for k in ("loop", "db"):
+            problems.pop(k, None)
 
     prev = load_ledger()
     active = set(problems.keys())

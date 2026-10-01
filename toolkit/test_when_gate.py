@@ -31,8 +31,8 @@ TEMPORAL = {
 
 # kandidáti z recall (id, skóre) — 200 (starý) má vyššie skóre než 100 (nový)
 CANDS = [
-    {"id": 200, "score": 0.9, "meta": {"text": "adresa A"}},
-    {"id": 100, "score": 0.7, "meta": {"text": "adresa B"}},
+    {"id": 200, "score": 0.9, "meta": {"text": "Prosta 68"}},
+    {"id": 100, "score": 0.7, "meta": {"text": "Ulica 1/1"}},
     {"id": 300, "score": 0.5, "meta": {"text": "iný fakt"}},
 ]
 

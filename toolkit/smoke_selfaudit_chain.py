@@ -16,7 +16,7 @@ import sys
 import json
 
 HOME = os.path.expanduser("~")
-ROOT = os.path.join(HOME, "projects", "zolander")
+ROOT = os.environ.get("ZOLANDER_ROOT", os.path.join(HOME, "zolander"))
 TOOLKIT = os.path.join(ROOT, "toolkit")
 STATE = os.path.join(ROOT, "state")
 sys.path.insert(0, TOOLKIT)
@@ -52,16 +52,23 @@ for p in res.get("proposals", [])[:3]:
                                "delta_r_child_minus_parent")))
 
 # --- 2 + 3. initiative.edge_health() watermark ---
-# vynuluj watermark aby bol 1. beh deterministicky
+# initiative.py is a private, environment-bound daemon (not shipped in this repo).
+# If it's present (author's full tree) run the watermark checks; otherwise skip
+# gracefully — edge_selfaudit above already covers the shipped self-audit logic.
 seen = os.path.join(STATE, "edge_selfaudit_seen.json")
-if os.path.exists(seen):
-    os.remove(seen)
-import initiative
-h1 = initiative.edge_health()
-check("edge_health() 1. beh vratil str", isinstance(h1, str))
-h2 = initiative.edge_health()
-check("edge_health() 2. beh (nic sa nezmenilo) je TICHO", h2 == "")
-print(f"      (1.beh dlzka={len(h1)}, 2.beh dlzka={len(h2)})")
+try:
+    import initiative
+except ImportError:
+    print("  [SKIP] initiative not present (private daemon) — watermark checks skipped")
+else:
+    # reset watermark so the 1st run is deterministic
+    if os.path.exists(seen):
+        os.remove(seen)
+    h1 = initiative.edge_health()
+    check("edge_health() 1st run returned str", isinstance(h1, str))
+    h2 = initiative.edge_health()
+    check("edge_health() 2nd run (nothing changed) is SILENT", h2 == "")
+    print(f"      (1st run len={len(h1)}, 2nd run len={len(h2)})")
 
 # --- 4. zol_graph poistka mimo CWD toolkit/ ---
 import zol_graph

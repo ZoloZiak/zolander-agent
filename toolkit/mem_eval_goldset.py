@@ -16,7 +16,8 @@ import json
 HOME = os.path.expanduser("~")
 IDX = os.path.join(HOME, "projects", "zolander", "state", "mem_index.jsonl")
 OUT = os.path.join(HOME, "projects", "zolander", "state", "mem_eval_gold.json")
-sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "__PROJECT__", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","__PROJECT__","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"__PROJECT__","toolkit"))
+sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolo2.0", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolo2.0","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolo2.0","toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
 # kolko zaznamov do gold-setu a ako husto vzorkovat naprie korpusom
 N_SAMPLE = int(os.environ.get("EVAL_N", "24"))

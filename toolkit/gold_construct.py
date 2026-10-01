@@ -14,7 +14,8 @@ FER-NOST (aby ziadny variant nedostal vyhodu):
 Resumovatelne: gold_pairs.jsonl (jeden riadok na dieta)."""
 import json, os, sys, math, random, argparse
 
-sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from palantir_client import chat
 
 STATE = os.path.expanduser("~/projects/zolander/state")

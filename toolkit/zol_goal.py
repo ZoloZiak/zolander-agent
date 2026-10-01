@@ -10,7 +10,7 @@ GRADIENT nie je ČÍSLO (nedá sa Goodhartovať), je to VEKTOR = zoznam konkrét
 nedotiahnutých vecí čítaných Z DISKU, každá s transparentnou magnitúdou + dôvodom:
   - state/tasks.json          — durable úlohy status running/paused (zol_tasks)
   - state/initiative_pending.jsonl — otvorené iniciatívne návrhy (status pending)
-  - git dirty v allowlist projektoch (__PROJECT__, turiec-pod-lupou) — riziko straty práce
+  - git dirty v allowlist projektoch (zolo2.0, turiec-pod-lupou) — riziko straty práce
   - PLAN.md "Ďalší krok" markery — explicitné TODO čo si Zolander sám poznačil
 
 CIEĽ (state/goal.json) je READ-ONLY pre loop — definuje ho VEDÚCKO, loop si ho NEMÔŽE
@@ -46,7 +46,7 @@ GOAL = os.path.join(STATE, "goal.json")
 PLAN = os.path.join(ROOT, "PLAN.md")
 
 ALLOWED_PROJECTS = {
-    "__PROJECT__": os.path.join(HOME, "projects", "__PROJECT__"),
+    "zolo2.0": os.path.join(HOME, "projects", "zolo2.0"),
     "turiec-pod-lupou": os.path.join(HOME, "projects", "turiec-pod-lupou"),
 }
 

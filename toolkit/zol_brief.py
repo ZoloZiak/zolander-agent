@@ -27,6 +27,7 @@ HEARTBEAT = os.path.join(STATE, "heartbeat.txt")
 LOOPLOG = os.path.join(LOGS, "loop.log")
 NOTIFY = os.path.join(ROOT, "toolkit", "zolander_notify.py")
 INTEGRITY = os.path.join(ROOT, "toolkit", "integrity.py")
+MASTERPLAN_CHECK = os.path.join(ROOT, "toolkit", "masterplan_check.py")
 PYBIN = "/usr/bin/python3"
 
 
@@ -169,6 +170,30 @@ def dream_summary():
     return out if out else None
 
 
+def masterplan_summary():
+    """Spusti masterplan auto-check (run = overi realitu, zapise life.json +
+    prekresli dashboard) a vrati zhrnutie % per faza + zmeny. Fail-open: ak
+    skript chyba/zlyha, vrati None (brief kvoli tomu nespadne)."""
+    if not os.path.exists(MASTERPLAN_CHECK):
+        return None
+    try:
+        p = subprocess.run([PYBIN, MASTERPLAN_CHECK, "run"],
+                           capture_output=True, text=True, timeout=120, cwd=ROOT)
+        out = (p.stdout or "").strip()
+        if not out:
+            return None
+        # prve riadky su "% per faza", Δ zmeny ak su; vratime cely blok ako odrazky
+        lines = []
+        for ln in out.splitlines():
+            s = ln.strip()
+            if not s or s.startswith("🎯"):
+                continue
+            lines.append("- " + s if not s.startswith(("-", "✅", "⬜", "•", "Δ")) else "  " + s)
+        return lines or None
+    except Exception:
+        return None
+
+
 def build_message():
     parts = ["Zolander ranny brief"]
 
@@ -213,6 +238,12 @@ def build_message():
         parts.extend(d)
     else:
         parts.append("- sen: bez novej konsolidacie")
+
+    # masterplan auto-check (overi realitu, prekresli dashboard)
+    mp = masterplan_summary()
+    if mp:
+        parts.append("- masterplan:")
+        parts.extend("  " + x for x in mp)
 
     return "\n".join(parts)
 

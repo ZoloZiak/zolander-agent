@@ -1,0 +1,10 @@
+{
+  "name": "zolander-toolkit-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node bridge (hs.mjs) to HyperspaceDB for the Zolander toolkit.",
+  "type": "module",
+  "dependencies": {
+    "hyperspace-sdk-ts": "*"
+  }
+}

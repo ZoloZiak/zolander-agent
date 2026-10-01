@@ -1,0 +1,9 @@
+[Unit]
+Description=Zolander daily morning brief (daily at 08:00)
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

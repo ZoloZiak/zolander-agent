@@ -11,7 +11,7 @@ sa pre klaster: is-a strom (deti su instancie hubu) ALEBO surodenci (rovnaka uro
 abstrakcie -> parent->related)? + per-dieta klasifikacia + ci hub patri vyssie (reclass).
 
 LEN CITA graf + vola LLM. Zapise navrh do state/edge_cluster_verdict.json. NIC v grafe nemeni.
-Bezi pod .venv-yar/bin/python (palantir_client z __PROJECT__/toolkit).
+Bezi pod .venv-yar/bin/python (palantir_client z zolo2.0/toolkit).
 """
 import os, sys, json
 
@@ -20,7 +20,8 @@ STATE = os.path.join(HOME, "projects", "zolander", "state")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 EDGES = os.path.join(STATE, "mem_edges.jsonl")
 OUT = os.path.join(STATE, "edge_cluster_verdict.json")
-sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from palantir_client import chat
 
 HUBS = [685, 558]

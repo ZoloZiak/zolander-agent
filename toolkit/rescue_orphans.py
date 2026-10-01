@@ -3,13 +3,13 @@
 
 Tieto ID boli vpchane priamym `hs insert` (obchadzajuc cmd_remember) -> su v DB
 Lorentz, ale NIE v indexe, NIE v Gemma, bez HMAC podpisu = slepe pre BM25 aj decay
-aj Gemma lens. Obsah = realny fakt o veduckovi (hudba) + test junk + 1
+aj Gemma lens. Obsah = realny fakt o veduckovi (gabber/hardcore) + test junk + 1
 redundantny fakt.
 
 Postup (kopiruje dream-loop recovery vzor):
   1. re-fetch full meta orphanov cez search (pre trash recovery),
   2. soft-delete kazdy z DB + zapis do dedup_trash.jsonl (merged_into=novy cisty fakt),
-  3. zapis JEDEN cisty konsolidovany hudobny fakt cez OFICIALNY cmd_remember
+  3. zapis JEDEN cisty konsolidovany gabber fakt cez OFICIALNY cmd_remember
      (Lorentz + Gemma + index + HMAC + graf hrany naraz).
 
 DRY-RUN: `python rescue_orphans.py --dry-run` (nic nemaze, nic nezapisuje).
@@ -28,9 +28,9 @@ DRY = "--dry-run" in sys.argv
 
 # cisty konsolidovany fakt (nahrada za 399-405; 397 redundantny, 398 junk)
 CLEAN_FACT = (
-    "Vedúcko vyrába elektronickú hudbu, "
-    ""
-    "chce 100% analógový reťazec, nula digitálu vo výrobe."
+    "Vedúcko vyrába tvrdú elektroniku — žánre gabber a hardcore techno, kde je "
+    "skreslený kopák jadrom zvuku: gabber kick vzniká distorziou 909 kicku "
+    "(skreslený base drum). Chce 100% analógový reťazec, nula digitálu vo výrobe."
 )
 
 
@@ -45,7 +45,7 @@ def hs(cmd, *args, stdin=None):
 
 # --- 1) re-fetch full meta orphanov (batéria dotazov, zozbieraj payloady) ---
 QUERIES = [
-    "elektronicka hudba zaner beat efekt analog vyroba",
+    "gabber hardcore techno kopak 909 kick distorzia analog vyroba elektronika",
     "OrbStack kontajner hyperspace port 50051 pamat",
     "fail-open test gemma daemon xyzzy",
 ]
@@ -69,7 +69,7 @@ for oid in sorted(ORPHANS):
     meta = (rec or {}).get("meta", {}) or {}
     reason = ("test junk (xyzzy)" if oid == 398 else
               "redundantny s indexom (OrbStack 5x)" if oid == 397 else
-              "DB-only orphan zluceny do cisteho hudobneho faktu")
+              "DB-only orphan zluceny do cisteho gabber faktu")
     if DRY:
         print(f"[dry] del {oid} + trash :: {reason} :: {(meta.get('text') or '')[:70]}")
         trashed.append(oid)

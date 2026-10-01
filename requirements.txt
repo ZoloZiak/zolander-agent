@@ -1,0 +1,27 @@
+# Zolander toolkit — Python dependencies
+#
+# Install into the recommended virtualenv (bootstrap.sh does this for you):
+#   python3 -m venv ~/.venv-zolander
+#   ~/.venv-zolander/bin/pip install -r requirements.txt
+#
+# Split by weight so you can skip the heavy embedder if you bring your own.
+
+# --- core (identity, A2A signing) -------------------------------------------
+cryptography>=42.0          # Ed25519 identity key + signing (gen_identity, a2a)
+
+# --- memory math / LLM client ----------------------------------------------
+numpy>=1.26                 # Lorentz geometry, clustering, eval math
+# palantir_client is pure stdlib (urllib) — no extra deps.
+
+# --- native hyperbolic embedder (YAR v5) ------------------------------------
+# Heavy (~2-3 GB with CUDA wheels). On a CPU-only box `pip install torch` pulls the
+# CPU build automatically on Linux. transformers is PINNED: >5.0.0 breaks the
+# model's attention masking (see embed_yar.py header).
+torch>=2.2
+transformers==5.0.0
+tokenizers>=0.20
+safetensors>=0.4
+
+# --- optional: end-to-end Matrix/Beeper memory (only if you wire that) -------
+# python-olm                # E2EE decrypt; needs libolm system lib. Left commented:
+                            # the matrix_* scripts are opt-in and most users skip them.

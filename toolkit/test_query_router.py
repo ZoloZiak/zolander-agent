@@ -31,7 +31,7 @@ def check(query, expected_route, note=""):
 
 # --- AGGREGATE: "zhrň všetko o X" typy ---
 check("zhrň všetko o Wole", ROUTE_AGGREGATE)
-check("daj mi prehľad všetkého o __PROJECT__", ROUTE_AGGREGATE)
+check("daj mi prehľad všetkého o zolo2.0", ROUTE_AGGREGATE)
 check("summarize everything about the memory pipeline", ROUTE_AGGREGATE)
 check("čo všetko vieš o mojom zdraví", ROUTE_AGGREGATE)
 check("kompletný obraz o statínoch", ROUTE_AGGREGATE)

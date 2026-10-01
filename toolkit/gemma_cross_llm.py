@@ -13,7 +13,7 @@ Pipeline (resumovatelny):
                suvisi, vrati {mem_idx, best_gid|null, strength 0-1, reason}. Prisny (default null).
   Vystup: state/cross_bridges.json = LEN Opusom potvrdene mosty (s dovodom). Resume: cross_llm.progress
 
-Beh: /usr/bin/python3 (numpy + palantir_client zo __PROJECT__). Daemon Gemma na :8901.
+Beh: /usr/bin/python3 (numpy + palantir_client zo zolo2.0). Daemon Gemma na :8901.
 """
 import os
 import sys
@@ -23,8 +23,9 @@ import numpy as np
 
 HOME = os.path.expanduser("~")
 ROOT = os.path.join(HOME, "projects", "zolander")
-ZOLO = os.path.join(HOME, "projects", "__PROJECT__")
+ZOLO = os.path.join(HOME, "projects", "zolo2.0")
 sys.path.insert(0, os.path.join(ZOLO, "toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
 MEM_IDX = os.path.join(ROOT, "state", "mem_index.jsonl")
 META = os.path.join(ZOLO, "work", "ingest_meta.jsonl")

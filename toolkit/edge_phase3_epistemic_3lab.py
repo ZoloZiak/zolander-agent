@@ -26,7 +26,8 @@ HOME = os.path.expanduser("~")
 STATE = os.path.join(HOME, "projects", "zolander", "state")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 OUT = os.path.join(STATE, "edge_phase3_epistemic_3lab.json")
-sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from palantir_client import chat
 
 MARGIN = 0.05

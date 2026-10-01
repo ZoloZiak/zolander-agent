@@ -103,7 +103,7 @@ jazyk → register/stručnosť → anti-korpo → identita), `detect_language(te
 
 **Pravidlá:** jazyk protistrany je inštrukcia č. 1 (nie pochovaná odrážka);
 krátko ako človek na mobile; žiadny naratívny monológ (väzba na KONSENZUS #8);
-Zolander ≠ Zoltán; osoba a jej agent sú dve entity.
+Zolander ≠ ZoloZiak; osoba a jej agent sú dve entity.
 
 ---
 

@@ -41,9 +41,10 @@ ZOL_MEM = os.path.join(ROOT, "toolkit", "zol_mem.py")
 VENV_YAR = os.path.join(ROOT, ".venv-yar", "bin", "python")
 EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 
-# palantir_client (chat/LLM) zije v __PROJECT__/toolkit; embedding je ODDELENY
+# palantir_client (chat/LLM) zije v zolo2.0/toolkit; embedding je ODDELENY
 # subprocess do VENV_YAR (torch tam, nie tu).
-sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
 MATCH_THRESHOLD = float(os.environ.get("PATTERNS_MATCH", "0.6"))   # Lorentz dist pod tuto = ISTY match uz z embeddingu, bez LLM
 # Kolko NAJBLIZSICH ulozenych vzorcov dat LLM na re-check. NIE prah vzdialenosti:

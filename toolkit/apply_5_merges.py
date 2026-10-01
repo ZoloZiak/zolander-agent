@@ -3,7 +3,7 @@
 
 NIE druhy dream beh (ten je nedeterministicky -> mohol by 494 skusit znova).
 Deterministicky vezmi 5 parov co veducko schvalil, 494<-504 VYNECHAJ (pasca:
-osobny fakt 'rodeny Slovak/praca' vs housing preferencia = NIE su duplikaty).
+osobny fakt 'rodeny Slovak/budova_a' vs housing preferencia = NIE su duplikaty).
 
 Kazdy removed: soft-delete z Lorentz zol_mem AJ z zol_mem_gemma (inak zombie!),
 reparent hran na keepera, trash stopa, sync index. Presne vzor dedup_dream ale

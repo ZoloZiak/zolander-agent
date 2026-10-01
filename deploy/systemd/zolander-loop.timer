@@ -1,0 +1,10 @@
+[Unit]
+Description=Zolander background loop tick (every 1200s)
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=1200
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -25,8 +25,10 @@ READ-ONLY: modul NIC neuklada, len vracia zoskupenie. Zapis rozhoduje volajuci
 """
 import os
 import json
+import os, sys
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
-# palantir_client (chat/LLM) zije v __PROJECT__/toolkit — volajuci moduly uz maju
+# palantir_client (chat/LLM) zije v zolo2.0/toolkit — volajuci moduly uz maju
 # sys.path.insert na neho; import robime LAZY vo funkcii (ako inde v projekte).
 
 MAX_DIRECT = int(os.environ.get("CLUSTER_LLM_MAX_DIRECT", "18"))

@@ -51,8 +51,24 @@ def tokenize(text):
     return [_stem(t) for t in _TOKEN.findall(_fold(text or ""))]
 
 
-def load_corpus(idx_path=IDX):
-    """Vrat list {id, text, kind, layer, ts} z mem_index.jsonl (fail-open)."""
+# Zombie stavy: episoda je uz mimo aktivnej hry (nizka salience, stara). BM25 ich
+# NEMA prehladavat — inak sa aktivne fakty topia v sume mrtvych riadkov (namerane:
+# rast korpusu 318->2437 zrazil BM25 R@1 z 0.83 na 0.58). Reverzibilne: filter je
+# CITACI (data ostavaju v mem_index.jsonl), a vypnutelny pre eval/audit cez
+# ZOL_LEXICAL_INCLUDE_DORMANT=1 (vtedy sa citaju vsetky riadky ako predtym).
+_DORMANT_STATES = {"dormant", "retired_candidate", "retired"}
+_INCLUDE_DORMANT = os.environ.get("ZOL_LEXICAL_INCLUDE_DORMANT", "0") == "1"
+
+
+def load_corpus(idx_path=IDX, include_dormant=None):
+    """Vrat list {id, text, kind, layer, ts, forget_state} z mem_index.jsonl (fail-open).
+
+    Default preskoci dormant/retired episody (mimo hry). include_dormant=True (alebo
+    env ZOL_LEXICAL_INCLUDE_DORMANT=1) ich zaradi spat — pre eval/audit ktore chcu
+    vidiet cely korpus.
+    """
+    if include_dormant is None:
+        include_dormant = _INCLUDE_DORMANT
     docs = []
     if not os.path.exists(idx_path):
         return docs
@@ -66,9 +82,13 @@ def load_corpus(idx_path=IDX):
             continue
         if "id" not in r:
             continue
+        fstate = r.get("forget_state", "active")
+        if not include_dormant and fstate in _DORMANT_STATES:
+            continue  # zombie — mimo BM25 korpusu (data ostavaju v subore)
         docs.append({"id": r["id"], "text": r.get("text", ""),
                      "kind": r.get("kind") or r.get("memory_type") or "episodic",
-                     "layer": r.get("layer", "L0"), "ts": r.get("ts", "")})
+                     "layer": r.get("layer", "L0"), "ts": r.get("ts", ""),
+                     "forget_state": fstate})
     return docs
 
 

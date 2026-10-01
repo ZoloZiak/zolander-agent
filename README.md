@@ -348,10 +348,12 @@ commits code, watches repos, and writes the brief. Altitude in the service of ac
 ```
 Identity   skills/zolander/SKILL.md + Ed25519 key (toolkit/gen_identity.py)
            + SHA-256 integrity manifest (toolkit/integrity.py)
-Setup      bootstrap.sh — one-shot install (Hermes + HyperspaceDB + toolkit +
-           identity + daemons). configure_palantir.py wires a Foundry proxy
-           (optional, config-level). fetch_skills.sh pulls skills from their
-           own sources. No secrets or forks in the repo.
+Setup      bootstrap.sh — one-shot, cross-platform install (Hermes + Dockerized
+           HyperspaceDB + toolkit + Python venv/deps + Node bridge + identity +
+           daemons: systemd --user on Linux, launchd on macOS).
+           configure_palantir.py wires a Foundry proxy (optional, config-level).
+           fetch_skills.sh pulls skills from their own sources. No secrets,
+           forks, or proxy/CA layer in the repo.
 Memory     One Lorentz-129D collection zol_mem (toolkit/zol_mem.py); the kind
            (semantic / episodic / procedural / identity) lives in the
            memory_type metadata field, not in separate collections. Native
@@ -362,8 +364,9 @@ Guard      zol_guard.py — deterministic anti-hallucination / anti-sycophancy
 Session    zol_session.py — start (recall-first) + koniec (guard + decay)
            + lens (double-take) + pattern (script detector) entry points.
 Bridge     hs.mjs — thin Node CLI over the HyperspaceDB SDK.
-Loop       zolander_loop.py — one-shot launchd tick (~20 min): integrity
-           (fail-closed) -> heartbeat -> git scan -> diary. No LLM.
+Loop       zolander_loop.py — one-shot tick (~20 min, via systemd timer on
+           Linux / launchd on macOS): integrity (fail-closed) -> heartbeat
+           -> git scan -> diary. No LLM.
 Notify     zolander_notify.py — one-way daemon->user channel: always appends to
            an inbox on disk, best-effort push to a messaging platform if one is
            wired, AND a native macOS banner (terminal-notifier, optional) whose
@@ -398,26 +401,64 @@ Hooks      hook_recall.py (pre_llm_call: inject recall once/session, cache-safe)
 
 ## Quick start
 
-The fast path is one script. `bootstrap.sh` installs Hermes, starts HyperspaceDB,
-clones this toolkit, generates your own identity key, records the integrity manifest,
-creates the memory collection, and loads the launchd daemons. It is idempotent, so
-re-running it is safe.
+The fast path is one script. `bootstrap.sh` is **cross-platform** (Linux and macOS):
+it installs Hermes, starts HyperspaceDB in Docker, clones this toolkit, creates a
+Python virtualenv and installs every dependency, installs the Node bridge SDK,
+generates your own identity key, records the integrity manifest, creates the memory
+collection, and loads the background daemons — **systemd `--user` timers on Linux,
+launchd agents on macOS**. It is idempotent, so re-running it is safe, and it prints
+each step as it goes.
 
 ```
 bash bootstrap.sh
 ```
 
 It wires no LLM provider on purpose — you pick your own afterwards with `hermes model`.
-Two optional add-ons:
+Useful env knobs:
 
 ```
-ZOLANDER_PALANTIR=1 bash bootstrap.sh   # also wire a Palantir Foundry proxy (prompts host+token)
-bash toolkit/fetch_skills.sh            # pull the skills from their own sources (no forks)
+ZOLANDER_PALANTIR=1 bash bootstrap.sh    # also wire a Palantir Foundry proxy (prompts host+token)
+ZOLANDER_SKIP_EMBED=1 bash bootstrap.sh  # core deps only — skip the heavy torch/transformers embedder
+ZOLANDER_ROOT=~/zolander bash bootstrap.sh   # where to install (default ~/zolander)
+bash toolkit/fetch_skills.sh             # pull the skills from their own sources (no forks)
 ```
+
+### Linux note (systemd `--user`)
+
+The timers are installed as **systemd user units** under `~/.config/systemd/user/`
+(`zolander-loop.timer`, `-watchdog`, `-dream`, `-brief`). User timers only run while
+you are logged in; for a box that should keep ticking 24/7 (a headless server, a
+friend's always-on machine) enable lingering once:
+
+```
+sudo loginctl enable-linger "$USER"
+```
+
+Inspect them with `systemctl --user list-timers` and read logs with
+`journalctl --user -u zolander-loop.service`. The unit templates live in
+`deploy/systemd/` and carry `__PY__`/`__ROOT__` placeholders the installer renders.
+
+### Dependencies
+
+`bootstrap.sh` handles all of this; it's listed here so you know what lands. Python
+deps are pinned in `requirements.txt` and installed into a venv (default
+`~/.venv-zolander`):
+
+- **core:** `cryptography` (Ed25519 identity + A2A signing), `numpy` (Lorentz math).
+- **embedder (heavy, ~2-3 GB):** `torch`, `transformers==5.0.0` (pinned — newer breaks
+  the model's attention masking), `tokenizers`, `safetensors`. Skip with
+  `ZOLANDER_SKIP_EMBED=1` if you bring your own embedder.
+- **optional:** `python-olm` (only if you wire the Matrix/Beeper memory path).
+
+Node deps (the HyperspaceDB SDK for `hs.mjs`) are in `toolkit/package.json` and
+installed into `toolkit/node_modules`; the installer exports `NODE_PATH` so the bridge
+resolves the SDK by bare name on any box — no absolute paths baked in. `palantir_client.py`
+is pure stdlib (no pip install needed).
 
 Palantir support is config-level (custom providers via `hermes config set`), not source
 patches, so it survives `hermes update`. Your token stays in `~/.hermes/.env`, never in
-this repo.
+this repo. **There is no TLS-proxy / custom-CA / proxy layer anywhere in the
+published code** — the client uses your system trust store like any normal program.
 
 #### Getting a Palantir Foundry token (optional)
 
@@ -444,12 +485,11 @@ wait a moment and continue. Check exact limits in Foundry under *Resource Manage
 usage and limits*, and enabled models under *Language Models* (if names differ from the
 defaults, adjust the `palantir-*` provider blocks in `~/.hermes/config.yaml`).
 
-Prereqs the script expects to already exist: [Hermes Agent](https://hermes-agent.nousresearch.com),
-Docker (for HyperspaceDB), Node with the HyperspaceDB SDK, Python with `cryptography`,
-and a **native hyperbolic embedder** (the reference uses YAR v5 via `embed_yar.py`; plug
-in your own — the collection is Lorentz-129D). Optional: `terminal-notifier`
-(`brew install terminal-notifier`) for clickable native macOS banners — without it the
-notify layer falls back to inbox + messaging push.
+Prereqs the script expects to already exist (or installs): [Hermes Agent](https://hermes-agent.nousresearch.com),
+Docker (for HyperspaceDB), Node 18+ with npm, Python 3.10+ with `venv`. The installer
+creates the venv and installs the Python/Node deps itself. Optional, macOS-only:
+`terminal-notifier` (`brew install terminal-notifier`) for clickable native banners —
+without it (and on Linux) the notify layer falls back to inbox + messaging push.
 
 ### By hand
 
@@ -478,8 +518,10 @@ python toolkit/zol_session.py start
 python3 toolkit/zol_guard.py scan-text <file>
 ```
 
-> Paths in the scripts (node binary, embed model, npm dir) and the `__USER__`
-> placeholders in the plist templates are for the reference machine — edit them.
+> Paths in the scripts are resolved from `$HOME`/`ZOLANDER_ROOT` and the venv; the
+> `__USER__`/`__PY__`/`__ROOT__` placeholders in the plist and systemd templates are
+> rendered by `bootstrap.sh`. If you run by hand, point `NODE_PATH` at your
+> `toolkit/node_modules` and use the venv python (`~/.venv-zolander/bin/python`).
 
 ## Memory schema
 

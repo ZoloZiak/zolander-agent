@@ -45,11 +45,18 @@ TASKS = os.path.join(STATE, "tasks.json")
 PENDING = os.path.join(STATE, "initiative_pending.jsonl")
 
 ALLOWED_PROJECTS = {
-    "__PROJECT__": os.path.join(HOME, "projects", "__PROJECT__"),
+    "zolo2.0": os.path.join(HOME, "projects", "zolo2.0"),
     "turiec-pod-lupou": os.path.join(HOME, "projects", "turiec-pod-lupou"),
 }
 AUTO_BRANCH = "zolander/auto"
 CLAIM_WORDS = ("commit", "commitnut", "pushnut", "pushol", "push overen", "naostro pushnut")
+# Auto-generovane build artefakty: git ich hlasi dirty, ale NIE su "praca co visi".
+# AGENTS.md prepisuje kazdy `next dev` (turiec) -> inak by claim_vs_dirty firoval navzdy.
+IGNORE_DIRTY_BASENAMES = ("AGENTS.md",)
+# Temp/probe konvencia veducka: subory s prefixom "_" su jednorazove scratch (daemon probes,
+# _bazos_probe.py, _tesin*.py, _olx_*). NIE su "praca co visi" -> honesty audit ich ignoruje.
+# Realna praca prefix "_" nema, takze toto nezamlci ziadny skutocny dirty stav.
+IGNORE_DIRTY_PREFIX = "_"
 
 
 def now_str():
@@ -79,7 +86,18 @@ def _dirty_count(path):
     rc, out = _git(path, "status", "--porcelain")
     if rc != 0:
         return -1
-    return len([l for l in out.splitlines() if l.strip()])
+    n = 0
+    for l in out.splitlines():
+        if not l.strip():
+            continue
+        # porcelain riadok: "XY <cesta>" -> basename posledneho tokenu
+        base = os.path.basename(l.strip().split()[-1])
+        if base in IGNORE_DIRTY_BASENAMES:
+            continue
+        if base.startswith(IGNORE_DIRTY_PREFIX):
+            continue
+        n += 1
+    return n
 
 
 def _branch_exists(path, branch):

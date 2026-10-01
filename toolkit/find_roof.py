@@ -199,7 +199,8 @@ def suggest(child_id, topk=TOPK, use_llm=True, model="opus"):
 
 
 def _ask_opus(child_id, texts, gc, model):
-    sys.path.insert(0, os.path.join(HOME, "projects", "__PROJECT__", "toolkit"))
+    sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
+    sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
     try:
         from palantir_client import chat
     except Exception as e:

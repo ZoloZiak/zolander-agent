@@ -37,7 +37,15 @@ DEFAULT_START_QUERY = "aktualny stav Zolander a otvorene ulohy co treba dokoncit
 
 
 def _run(argv, stdin=None):
-    p = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+    # Imunita voci PYTHONPATH/PYTHONHOME leaku z launch prostredia: Hermes desktop
+    # appka mohla byt spustena zo shellu, kde PYTHONPATH mieril na iny Python
+    # (napr. ~/Library/Python/3.9/site-packages, numpy 2.0.2). Ak sa to prenesie
+    # do venv python-u (3.12), nacita cudziu numpy pure-vrstvu bez matnevhodneuceho
+    # C-ext => "No module named 'numpy._core._multiarray_umath'" a recall padne.
+    # Toolkit skripty si sys.path riadia samy, takze zdedeny PYTHON* netreba.
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PYTHONPATH", "PYTHONHOME")}
+    p = subprocess.run(argv, input=stdin, capture_output=True, text=True, env=env)
     return p.returncode, p.stdout, p.stderr
 
 
@@ -67,7 +75,7 @@ def inbox_tail(n=8):
 
 
 def batch_status():
-    """Jednoriadkovy stav book-batchu (__PROJECT__). Fail-open => prazdny retazec."""
+    """Jednoriadkovy stav book-batchu (zolo2.0). Fail-open => prazdny retazec."""
     if not os.path.exists(BATCH_STATE):
         return ""
     try:
@@ -107,6 +115,11 @@ def format_recall_hits(hits):
         prefix = []
         if hits.get("backend") == "DOWN":
             prefix.append("PAMÄŤ: BACKEND DOWN — zobrazený je degradovaný recall")
+        # DEGRADED (2026-10-01): recall_health správa o vypadnutej vrstve. Daj ju NAHLAS
+        # ako prvý riadok s markerom, nech ju model MUSÍ spomenúť (fail-LOUD, nie ticho).
+        dmsg = hits.get("degraded")
+        if dmsg and hits.get("backend") != "DOWN":
+            prefix.append("⚠️ RECALL DEGRADOVANÝ (povedz to vedúckovi): " + str(dmsg))
         hits = hits.get("results", [])
     else:
         prefix = []

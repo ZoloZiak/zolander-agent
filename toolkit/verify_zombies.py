@@ -43,7 +43,7 @@ for line in open(os.path.join(STATE, "mem_index.jsonl"), encoding="utf-8"):
 # texty z Gemma (pre tie co nie su v indexe)
 gem_txt = {}
 for q in ["identita HMAC podpis test zmazat", "pamat recall veducko",
-          "elektronicka hudba", "zdravie lieky", "sandbox mac gateway"]:
+          "gabber hardcore", "zdravie lekar", "sandbox mac gateway"]:
     try:
         for r in (hs("search", "zol_mem_gemma", 300, stdin=json.dumps({"vector": gemma_embed(q)})) or []):
             m = r.get("meta", {}) or {}

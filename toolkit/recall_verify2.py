@@ -14,8 +14,8 @@ def recall(q, k=8):
         sys.stdin, sys.stdout = _si, _so
     return buf.getvalue().strip()
 
-for q in ["aku elektronicku hudbu robi veducko",
-          "elektronika beat efekt analog retazec"]:
+for q in ["aku tvrdu elektroniku a hudbu robi veducko gabber hardcore",
+          "gabber kick 909 distorzia analog reťazec"]:
     raw = recall(q)
     try:
         r = json.loads(raw)  # cely blob, nie posledny riadok

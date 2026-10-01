@@ -26,10 +26,13 @@ HEARTBEAT = os.path.join(STATE, "heartbeat.txt")
 LOOPLOG = os.path.join(LOGS, "loop.log")
 INTEGRITY = os.path.join(ROOT, "toolkit", "integrity.py")
 LAST_SIG = os.path.join(STATE, "loop_last_findings.json")
+MASTERPLAN_CHECK = os.path.join(ROOT, "toolkit", "masterplan_check.py")
+MP_STAMP = os.path.join(STATE, "loop_masterplan_stamp.txt")
+MP_THROTTLE_SEC = 20 * 3600  # auto-check max raz za ~20h (brief ho robi denne; toto je poistka)
 
 # dovolene projekty na sken (P1 z PLAN §5) — len citanie stavu, ziadne zmeny
 ALLOWED_PROJECTS = [
-    os.path.join(HOME, "projects", "__PROJECT__"),
+    os.path.join(HOME, "projects", "zolo2.0"),
     os.path.join(HOME, "projects", "turiec-pod-lupou"),
 ]
 
@@ -173,6 +176,33 @@ def write_diary(findings):
     _save_last_sig(sig)
 
 
+def maybe_masterplan_check():
+    """Throttled poistka: spusti masterplan auto-check max raz za MP_THROTTLE_SEC.
+    Ranny brief ho robi denne; toto drzi dashboard cerstvy aj keby brief nezbehol.
+    Fail-open: zlyhanie NEprerusi tick. Vrati True ak sa teraz spustil."""
+    if not os.path.exists(MASTERPLAN_CHECK):
+        return False
+    try:
+        last = 0
+        if os.path.exists(MP_STAMP):
+            with open(MP_STAMP, encoding="utf-8") as f:
+                last = float(f.read().strip() or 0)
+        if (time.time() - last) < MP_THROTTLE_SEC:
+            return False
+        subprocess.run(["/usr/bin/python3", MASTERPLAN_CHECK, "run"],
+                       capture_output=True, text=True, timeout=120)
+        os.makedirs(STATE, exist_ok=True)
+        tmp = MP_STAMP + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(str(int(time.time())))
+        os.replace(tmp, MP_STAMP)
+        log("masterplan auto-check zbehol (throttled poistka)")
+        return True
+    except Exception as e:
+        log(f"masterplan auto-check zlyhal (fail-open): {e!r}")
+        return False
+
+
 def tick():
     ok, note = check_integrity()
     if not ok:
@@ -181,6 +211,7 @@ def tick():
     write_heartbeat()
     findings = scan_projects()
     write_diary(findings)
+    maybe_masterplan_check()
     total = sum(len(d) for _, d in findings)
     log(f"tick OK | projekty so zmenami={len(findings)} | zmien spolu={total}")
     if note:

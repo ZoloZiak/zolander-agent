@@ -1,0 +1,10 @@
+[Unit]
+Description=Zolander infra watchdog (every 3600s)
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

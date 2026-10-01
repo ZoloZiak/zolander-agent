@@ -19,7 +19,7 @@ POISTKY MoA (aby nezlozilo session / 429 / sandbox):
   - LEN attempt 0: nudne raz, neopakuje donekonecna.
   - THROTTLE: max raz za ZOL_VERIFY_MOA_COOLDOWN s (default 120) cez stamp subor.
   - FILTER: len .md/kod, 200..20000 znakov, max 2 subory/turn.
-  - ENV self-load: PALANTIR_TOKEN (~/.zsh_secrets) + SSL bundle (hook nema .zshrc).
+  - ENV self-load: PALANTIR_TOKEN read from ~/.hermes/.env (hook has no shell rc).
   - SIGALRM watchdog (default 90s) + FAIL-OPEN vsade: LLM zlyha/visi -> ticho pusti.
   - Hook nikdy nespadne (except -> ticho).
 """
@@ -100,17 +100,19 @@ def _mechanical(changed):
 # ---------- MoA vrstva (opt-in) ----------
 
 def _ensure_env():
-    """Hook bezi pod /usr/bin/python3 bez .zshrc -> dopln token + SSL sam."""
+    """A hook may run under a bare python without your shell rc, so make sure the
+    Palantir token is in the env for palantir_client. Read it from ~/.hermes/.env
+    (Hermes' 0600 store) if it isn't already exported. No CA override: the client
+    uses the system trust store (no TLS-proxy layer in this repo)."""
     if not os.environ.get("PALANTIR_TOKEN"):
         try:
-            for line in open(os.path.expanduser("~/.zsh_secrets"), encoding="utf-8"):
+            for line in open(os.path.expanduser("~/.hermes/.env"), encoding="utf-8"):
                 s = line.strip()
-                if "PALANTIR_TOKEN" in s and "=" in s:
+                if s.startswith("PALANTIR_TOKEN="):
                     os.environ["PALANTIR_TOKEN"] = s.split("=", 1)[1].strip().strip('"').strip("'")
                     break
         except Exception:
             pass
-        if os.path.isfile(b):
 
 
 def _throttled():
@@ -172,7 +174,7 @@ def _moa_review(changed, cwd):
     problems = []
     try:
         sys.path.insert(0, os.path.expanduser("~/projects/zolander/toolkit"))
-        sys.path.insert(0, os.path.expanduser("~/projects/__PROJECT__/toolkit"))
+        sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
         from zol_eval import evaluate
         threshold = float(os.environ.get("ZOL_VERIFY_MOA_THRESHOLD", "0.6"))
         for path, txt in files:

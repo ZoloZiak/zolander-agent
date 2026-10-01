@@ -62,9 +62,15 @@ def main() -> None:
     if not os.path.exists(ZOL_SESSION):
         return
     try:
+        # Vycisti PYTHON* leak z launch prostredia (viz zol_session._run) — inak
+        # sa PYTHONPATH mieriaci na cudzi Python prenesie az do venv recall
+        # subprocessu a numpy C-ext import padne. Deti dedia uz cisty env.
+        clean_env = {k: v for k, v in os.environ.items()
+                     if k not in ("PYTHONPATH", "PYTHONHOME")}
         p = subprocess.run(
             [SYS_PY, ZOL_SESSION, "start"],
             capture_output=True, text=True, timeout=RECALL_TIMEOUT,
+            env=clean_env,
         )
         out = (p.stdout or "").strip()
     except Exception as exc:

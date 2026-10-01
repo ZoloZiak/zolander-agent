@@ -17,7 +17,7 @@ import numpy as np
 
 HOME = os.path.expanduser("~")
 ROOT = os.path.join(HOME, "projects", "zolander")
-ZOLO = os.path.join(HOME, "projects", "__PROJECT__")
+ZOLO = os.path.join(HOME, "projects", "zolo2.0")
 MEM_IDX = os.path.join(ROOT, "state", "mem_index.jsonl")
 META = os.path.join(ZOLO, "work", "ingest_meta.jsonl")
 ASSIGN = os.path.join(ZOLO, "work", "assignments_opus.jsonl")

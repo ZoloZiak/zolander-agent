@@ -32,7 +32,7 @@ def _fake_resolver(store):
 
 def test_missing_certainty_defaults_explicit_accepts():
     # Spätná kompatibilita: existujúce volania cmd_remember NEposielajú certainty.
-    dec, _ = evaluate({"text": "vedúcko býva na svojej adrese"}, _fake_resolver({}))
+    dec, _ = evaluate({"text": "vedúcko býva Ulica 1/1"}, _fake_resolver({}))
     assert dec == ACCEPT
 
 

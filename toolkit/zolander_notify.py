@@ -20,6 +20,7 @@ zvycajnych miestach (launchd ma orezany PATH -> preto explicitne cesty).
 import os
 import sys
 import json
+import time
 import shutil
 import datetime
 import subprocess
@@ -118,14 +119,21 @@ def try_push(hermes, target, subject, body):
     if subject:
         cmd += ["--subject", subject]
     cmd += [body]
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=SEND_TIMEOUT)
-        if p.returncode == 0:
-            log(f"PUSH ok -> {target}")
-            return True
-        log(f"PUSH zlyhal rc={p.returncode} -> {target}: {(p.stderr or '').strip()[:200]}")
-    except Exception as exc:
-        log(f"PUSH exception -> {target}: {exc!r}")
+    # RETRY: rc=1/timeout su casto transientne (bridge sa restartoval, hermes send
+    # --list timeout). 3 pokusy s backoffom. Fail-open: sprava aj tak zije v inboxe.
+    attempts = int(os.environ.get("ZOL_NOTIFY_PUSH_RETRIES", "3"))
+    for i in range(1, attempts + 1):
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=SEND_TIMEOUT)
+            if p.returncode == 0:
+                log(f"PUSH ok -> {target}{' (pokus ' + str(i) + ')' if i > 1 else ''}")
+                return True
+            log(f"PUSH zlyhal pokus {i}/{attempts} rc={p.returncode} -> {target}: "
+                f"{(p.stderr or '').strip()[:200]}")
+        except Exception as exc:
+            log(f"PUSH exception pokus {i}/{attempts} -> {target}: {exc!r}")
+        if i < attempts:
+            time.sleep(3 * i)  # 3s, 6s backoff
     return False
 
 

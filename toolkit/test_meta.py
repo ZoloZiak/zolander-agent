@@ -18,6 +18,7 @@ import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 import zol_manifest as zm  # noqa: E402
 import zol_meta as meta    # noqa: E402
 import zol_checker as zc    # noqa: E402

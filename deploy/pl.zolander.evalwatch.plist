@@ -20,9 +20,6 @@
     <string>/usr/bin/python3</string>
     <string>/Users/__USER__/zolander/toolkit/zol_eval_watch.py</string>
   </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-  </dict>
   <key>RunAtLoad</key>
   <false/>
   <key>StartInterval</key>
