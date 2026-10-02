@@ -27,6 +27,10 @@ and toolkit scripts. You generate your own identity key and write your own core.
 > not yet implemented, it says so. Every memory also carries a `confidence` score for
 > the same reason.
 
+> **Installing this with an AI agent?** Read **[`INSTALL_FOR_AGENTS.md`](INSTALL_FOR_AGENTS.md)**
+> first — it's the agent-facing entry point: install order, the one step that needs
+> a human decision (your LLM provider), the traps, and the honesty contract.
+
 ---
 
 ## The thesis
