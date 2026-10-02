@@ -30,6 +30,14 @@ safetensors>=0.4
 # balks, drop the pin above or skip this line.
 sentence-transformers>=3.0        # Gemma lens fallback (non-MLX); optional
 
+# --- optional: Slovak STT (voice input, desktop + Matrix/WhatsApp) ----------
+# stt_whisper.py transcribes voice messages with a Slovak-finetuned Whisper
+# large-v3-turbo. It auto-picks a backend: mlx_whisper on Apple Silicon,
+# else faster-whisper (CTranslate2, fast on CPU/CUDA), else the transformers
+# pipeline (always works — torch is already above). Install faster-whisper for
+# a good CPU/CUDA experience; skip it to fall back to transformers.
+faster-whisper>=1.0              # STT on CPU/CUDA (non-Apple); optional
+
 # --- optional: end-to-end Matrix/Beeper memory (only if you wire that) -------
 # python-olm                # E2EE decrypt; needs libolm system lib. Left commented:
                             # the matrix_* scripts are opt-in and most users skip them.

@@ -246,6 +246,9 @@ stdout, no flow change):
 ```yaml
 hooks:
   pre_tool_call:
+    - command: /usr/bin/python3 /path/to/toolkit/hook_cmd_guard.py
+      matcher: terminal          # HARD block: rm -rf, bash -c, chaining, disk wipe,
+      timeout: 30                #   destructive ops on the identity key / memory
     - command: /usr/bin/python3 /path/to/toolkit/hook_clarify_notify.py
       matcher: clarify          # banner when the agent asks YOU a question
       timeout: 20
@@ -253,6 +256,13 @@ hooks:
     - command: /usr/bin/python3 /path/to/toolkit/hook_done_notify.py
       timeout: 20               # banner when a file-editing turn finishes
 ```
+
+> **One config, one `hooks:` key.** YAML has a single `hooks:` mapping — the
+> blocks above are shown split for readability, but in your actual
+> `~/.hermes/config.yaml` you merge them: one `pre_llm_call:` list (recall +
+> skill_matcher), one `pre_tool_call:` list (cmd_guard + clarify_notify), one
+> `pre_verify:` list (verify + done_notify). `_add_cmdguard_hook.py` wires the
+> cmd-guard in for you idempotently if you'd rather not hand-edit.
 
 `hook_done_notify.py` fires only on the first finish attempt of a file-editing turn
 (`extra.coding` and `extra.attempt == 0`) so a `pre_verify` nudge loop doesn't banner
@@ -265,6 +275,41 @@ permission prompt and swallows the banner — the second works).
 > update won't delete them — but if the hook API changes, re-verify the event names and
 > the `{"context": ...}` / `{"action": "continue"}` contracts. `hermes hooks doctor`
 > checks allowlist + a synthetic-payload smoke test.
+
+## Voice input — Slovak STT (desktop + Matrix/WhatsApp)
+
+Hermes can take **voice** as input: the desktop app's mic and incoming voice
+messages on the Matrix/WhatsApp gateway are transcribed before they reach the
+agent. `toolkit/stt_whisper.py` is the STT command-provider — a Slovak-finetuned
+**Whisper large-v3-turbo** (the KInIT fine-tune, ~68% lower WER on Slovak than
+base turbo). It is wired under `stt:` in `~/.hermes/config.yaml`:
+
+```yaml
+# ~/.hermes/config.yaml  (paths are for the reference machine — edit them)
+stt:
+  enabled: true
+  provider: zolsk
+  providers:
+    zolsk:
+      type: command
+      command: /path/to/.venv-zolander/bin/python /path/to/toolkit/stt_whisper.py {input_path} {output_dir}
+```
+
+The script auto-selects a backend (override with `STT_BACKEND=mlx|faster|transformers`):
+
+- **mlx** — Apple Silicon, `mlx_whisper` (fastest on a Mac). Model
+  `aitytech/Whisper-Large-V3-Turbo-MLX-FP16`, or a local MLX dir.
+- **faster** — `faster-whisper` / CTranslate2 (fast on CPU/CUDA). Model
+  `deepdml/faster-whisper-large-v3-turbo-ct2`.
+- **transformers** — HF pipeline, **always works** (torch is already a dep).
+  Model `kinit/whisper-large-v3-turbo-sk` (the Slovak fine-tune, MIT).
+
+Set `WHISPER_SK_MODEL` to a local dir (offline) or any HF repo id to override.
+Decode settings are tuned for the turbo model (temperature fallback ON,
+`condition_on_previous_text=False`) so long recordings finish instead of getting
+cut to ~40s — see the script header for the why. Fail-loud: if every backend
+fails it writes an empty transcript (so Hermes doesn't crash) and explains why
+on stderr.
 
 ## Roadmap (NOT yet implemented — this is the vision, stated as vision)
 
