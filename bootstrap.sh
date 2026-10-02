@@ -16,7 +16,12 @@
 set -euo pipefail
 
 # --- config (override via env) ----------------------------------------------
-ROOT="${ZOLANDER_ROOT:-$HOME/zolander}"
+# ROOT must match where the toolkit scripts look for state/identity/toolkit:
+# ~40 of them hardcode os.path.expanduser("~/projects/zolander/..."). Keep this
+# default in sync with that, or recall/identity/memory silently read an empty
+# path. Override with ZOLANDER_ROOT only if you also set it in the daemon env.
+ROOT="${ZOLANDER_ROOT:-$HOME/projects/zolander}"
+export ZOLANDER_ROOT="$ROOT"
 REPO_URL="${ZOLANDER_REPO:-https://github.com/ZoloZiak/zolander-agent.git}"
 HS_IMAGE="${HS_IMAGE:-glukhota/hyperspace-db}"
 HS_PORT="${HS_PORT:-50051}"
@@ -117,9 +122,43 @@ else
 fi
 step "toolkit will run under: $PY"
 
-# --- 4. HyperspaceDB (Docker) -----------------------------------------------
+# --- 3b. embedder model (YAR 129D Lorentz) ----------------------------------
+# embed_yar.py uses a local copy if present (~/models/yar_v5_embedding, offline),
+# else downloads YARlabs/v5_Embedding_0.5B (Apache-2.0, ~1.2 GB) on first use.
+# Pre-fetch it here so the FIRST recall isn't a multi-minute stall. Fail-soft:
+# if this is skipped, embed_yar.py still pulls it lazily at first call.
+if [ "$SKIP_EMBED" != "1" ]; then
+  say "3b/9 Embedder model (YARlabs/v5_Embedding_0.5B, ~1.2 GB first time)"
+  if [ -d "$HOME/models/yar_v5_embedding" ]; then
+    step "local copy present (~/models/yar_v5_embedding) — using it offline"
+  else
+    step "pre-fetching from Hugging Face (one-time; recall needs it)"
+    # No local dir -> embed_yar.py resolves to the HF repo and downloads it.
+    "$PY" "$ROOT/toolkit/embed_yar.py" warm \
+      || warn "model pre-fetch had issues — it will download lazily on first recall"
+  fi
+fi
+
+# --- 4. HyperspaceDB (Docker OR native-on-metal) ----------------------------
 say "4/9  HyperspaceDB (vector store) on :$HS_PORT"
-if have docker; then
+# Two ways to run it; they both bind :50051, so pick ONE:
+#   - default: Docker container (portable, zero build)
+#   - ZOLANDER_HS_NATIVE=1: compile the Rust source and run bare-metal (no Docker),
+#     the way the author's Mac runs it. Slower first setup, no container overhead.
+if [ "${ZOLANDER_HS_NATIVE:-0}" = "1" ]; then
+  NATIVE_SH=""
+  for d in "$SELF_DIR" "$ROOT"; do
+    [ -n "$d" ] && [ -f "$d/deploy/build_hyperspace_native.sh" ] && { NATIVE_SH="$d/deploy/build_hyperspace_native.sh"; break; }
+  done
+  if [ -n "$NATIVE_SH" ]; then
+    step "native build requested (ZOLANDER_HS_NATIVE=1) — compiling from Rust source"
+    bash "$NATIVE_SH" build || warn "native build failed — see output; fall back with Docker (unset ZOLANDER_HS_NATIVE)"
+    step "built. Start it (foreground) with: bash $NATIVE_SH run"
+    step "  or wire it into systemd/launchd for 24/7 (see README). Not auto-started here."
+  else
+    warn "ZOLANDER_HS_NATIVE=1 but deploy/build_hyperspace_native.sh not found — skipping"
+  fi
+elif have docker; then
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^hyperspace$'; then
     step "container already running — skipping"
   elif docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^hyperspace$'; then
@@ -131,7 +170,8 @@ if have docker; then
       || warn "HyperspaceDB start failed — check 'docker logs hyperspace'"
   fi
 else
-  warn "docker missing — skipped. Memory needs it; install docker and re-run this step."
+  warn "docker missing — skipped. Either install Docker and re-run, or build native:"
+  warn "  ZOLANDER_HS_NATIVE=1 bash bootstrap.sh   (compiles the Rust source instead)"
 fi
 
 # --- 5. Node bridge (HyperspaceDB SDK) --------------------------------------

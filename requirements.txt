@@ -22,6 +22,14 @@ transformers==5.0.0
 tokenizers>=0.20
 safetensors>=0.4
 
+# --- optional: Gemma cosine lens on non-Apple boxes -------------------------
+# The 3rd recall lens (EmbeddingGemma 768D cosine) uses MLX on Apple Silicon.
+# On Linux/CPU/CUDA it falls back to sentence-transformers (gemma_embed_server.py
+# auto-detects). Install this ONLY if you want that lens off a Mac; recall still
+# works without it (YAR + BM25). Best-effort: it may tug transformers — if pip
+# balks, drop the pin above or skip this line.
+sentence-transformers>=3.0        # Gemma lens fallback (non-MLX); optional
+
 # --- optional: end-to-end Matrix/Beeper memory (only if you wire that) -------
 # python-olm                # E2EE decrypt; needs libolm system lib. Left commented:
                             # the matrix_* scripts are opt-in and most users skip them.

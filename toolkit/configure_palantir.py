@@ -2,24 +2,36 @@
 """configure_palantir.py — OPTIONAL: wire a Palantir Foundry LLM proxy into Hermes.
 
 Palantir Foundry's Developer Tier exposes Claude / GPT / Gemini behind one proxy.
-This wires all three as Hermes custom providers using ONLY your own server name +
+This wires all three as Hermes custom providers using ONLY your own tenant name +
 token — both prompted at runtime (or read from env), never baked into this repo.
 
 Design choice: we configure through `hermes config set` (config-level provider
-wiring), NOT by patching Hermes source. Source patches rot on every `hermes update`;
-a provider entry in config.yaml survives. The three proxy quirks are handled as
-provider settings, not code edits:
-  - anthropic branch  -> Bearer auth + anthropic-version header, `max_tokens`
-  - openai branch     -> `max_completion_tokens` (NOT `max_tokens`)
-  - google branch     -> Bearer auth + chat-completions routing
+wiring), NOT by patching Hermes source. The provider entries survive `hermes update`.
+(The strict-proxy QUIRKS that DO need core code — tool-call 400s, Gemini 422s,
+the gpt-5 dotted-RID max_tokens bug — are a separate concern handled by
+deploy/apply_hermes_patches.sh; this file only wires providers.)
 
-Idempotent: re-running just overwrites the same keys. Secrets land in ~/.hermes/.env
-(0600) via Hermes, never here.
+Each provider is written as ONE JSON value, because the model identifiers are
+Palantir RIDs full of dots (``ri.language-model-service..language-model.gpt-5-5``)
+and `hermes config set a.b.c` would split every dot into a nested map. Setting the
+whole provider block as JSON keeps the dotted RID as a single key (verified).
+
+The three proxy quirks are provider settings, not code edits:
+  - anthropic branch  -> api_mode ``anthropic_messages``, Bearer + anthropic-version
+  - openai branch     -> api_mode ``chat_completions`` (sends max_completion_tokens)
+  - google branch     -> api_mode ``chat_completions``, Bearer + chat-completions
+
+NO TLS proxy, NO custom CA, NO local pacing-gate shim: requests go straight to
+your Foundry tenant over the system trust store, like any normal program.
+
+Idempotent: re-running overwrites the same provider blocks. Secrets land in
+~/.hermes/.env (0600) via Hermes, never here.
 
 Usage:
-    python3 configure_palantir.py            # prompts for host + token
+    python3 configure_palantir.py            # prompts for tenant host + token
     PALANTIR_HOST=... PALANTIR_TOKEN=... python3 configure_palantir.py   # non-interactive
 """
+import json
 import os
 import sys
 import subprocess
@@ -27,21 +39,55 @@ import shutil
 
 # The proxy path layout is public Foundry API structure, not a secret.
 PROXY_PATH = "/api/v2/llm/proxy"
+
+# Per-branch wiring. `sub` is the proxy sub-path; `api_mode` is what Hermes sends;
+# `models` maps each enabled Palantir RID -> its limits. Edit the RIDs/limits here
+# if your tenant exposes different model versions (check Foundry -> Language Models).
 BRANCHES = {
     "palantir-claude": {
-        "path": "/anthropic/v1/messages",
-        "api_mode": "anthropic",
-        "note": "Bearer + anthropic-version header, max_tokens",
+        "name": "Palantir Claude (Opus / Sonnet)",
+        "sub": "/anthropic",
+        "api_mode": "anthropic_messages",
+        "default_model": "ri.language-model-service..language-model.anthropic-claude-4-8-opus",
+        "models": {
+            "ri.language-model-service..language-model.anthropic-claude-4-8-opus": {
+                "context_length": 1000000, "max_output_tokens": 200000, "supports_vision": True,
+            },
+            "ri.language-model-service..language-model.anthropic-claude-4-6-sonnet": {
+                "context_length": 200000, "max_output_tokens": 128000, "supports_vision": True,
+            },
+        },
     },
     "palantir-gpt": {
-        "path": "/openai/v1/chat/completions",
+        "name": "Palantir GPT (5.5 / 5.4 / 5.4-mini)",
+        "sub": "/openai/v1",
         "api_mode": "chat_completions",
-        "note": "uses max_completion_tokens, not max_tokens",
+        "default_model": "ri.language-model-service..language-model.gpt-5-5",
+        "models": {
+            "ri.language-model-service..language-model.gpt-5-5": {
+                "context_length": 1050000, "max_output_tokens": 128000, "supports_vision": True,
+            },
+            "ri.language-model-service..language-model.gpt-5-4": {
+                "context_length": 1050000, "max_output_tokens": 128000, "supports_vision": True,
+            },
+            "ri.language-model-service..language-model.gpt-5-4-mini": {
+                "context_length": 400000, "max_output_tokens": 128000, "supports_vision": True,
+            },
+        },
     },
     "palantir-gemini": {
-        "path": "/google/v1/chat/completions",
+        "name": "Palantir Gemini (3.1 Pro / 3.5 Flash)",
+        "sub": "/google/v1",
         "api_mode": "chat_completions",
-        "note": "Bearer + chat-completions routing",
+        "default_model": "ri.language-model-service..language-model.gemini-3-1-pro",
+        "models": {
+            "ri.language-model-service..language-model.gemini-3-1-pro": {
+                "context_length": 1000000, "max_output_tokens": 64000, "supports_vision": True,
+            },
+            "ri.language-model-service..language-model.gemini-3-5-flash": {
+                "context_length": 1048576, "max_output_tokens": 65535, "supports_vision": True,
+            },
+        },
     },
 }
 
@@ -66,13 +112,8 @@ def ask(prompt, env_key):
     return input(prompt).strip()
 
 
-def hset(hermes, key, value):
-    subprocess.run([hermes, "config", "set", key, value], check=True)
-
-
 def guide():
-    """Vypis kratky navod PRIAMO pred promptom — user nemusi hladat v README.
-    Ukaze sa len ked realne ideme pytat (interaktivne, hodnoty nie su v env)."""
+    """Short how-to printed right before the prompt — only when we actually ask."""
     if os.environ.get("PALANTIR_HOST") and os.environ.get("PALANTIR_TOKEN"):
         return
     if not sys.stdin.isatty():
@@ -92,6 +133,9 @@ def guide():
  3) TOKEN = Settings -> your profile -> Tokens
       (a.k.a. Account / Personal Access Tokens) -> Generate.
     Copy it immediately — it is shown only ONCE. Longest expiry is best.
+
+ Model RIDs in this script match a typical tenant; if `hermes model` shows no
+ models for a provider, your tenant exposes different versions — edit BRANCHES.
 
  No Palantir? Ctrl-C here and just run `hermes model` to pick any provider.
 ──────────────────────────────────────────────────────────────
@@ -114,15 +158,23 @@ def main():
                    check=True, stdout=subprocess.DEVNULL)
 
     for name, cfg in BRANCHES.items():
-        url = base + cfg["path"].rsplit("/v1", 1)[0] + "/v1"
-        print(f"  wiring {name}  ({cfg['note']})")
-        hset(hermes, f"providers.{name}.base_url", url)
-        hset(hermes, f"providers.{name}.api_mode", cfg["api_mode"])
-        hset(hermes, f"providers.{name}.api_key_env", "PALANTIR_TOKEN")
+        block = {
+            "name": cfg["name"],
+            "api": base + cfg["sub"],
+            "api_mode": cfg["api_mode"],
+            "key_env": "PALANTIR_TOKEN",
+            "discover_models": False,
+            "default_model": cfg["default_model"],
+            "models": cfg["models"],
+        }
+        print(f"  wiring {name}  ({cfg['api_mode']}, {len(cfg['models'])} models)")
+        # ONE JSON value — keeps dotted model RIDs as single keys (dot-split safe).
+        subprocess.run([hermes, "config", "set", f"providers.{name}", json.dumps(block)],
+                       check=True, stdout=subprocess.DEVNULL)
 
-    print("\nDone. Three Palantir surfaces wired as providers: "
-          + ", ".join(BRANCHES))
+    print("\nDone. Three Palantir surfaces wired as providers: " + ", ".join(BRANCHES))
     print("Pick one with `hermes model` (or /model in chat). Token is in ~/.hermes/.env.")
+    print("Config changes take effect in a NEW session (/new or restart).")
     print("Verify live with: hermes chat -q 'say ok' --provider palantir-claude")
     return 0
 
