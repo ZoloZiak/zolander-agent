@@ -99,8 +99,49 @@ for patch in "$PATCH_DIR"/*.patch; do
 done
 
 say "Core patches: $applied applied, $already already present, $skipped skipped"
+
+# --- LOUD verify: are the Palantir-critical fixes ACTUALLY in the tree? -------
+# A skipped patch is silent by nature: Palantir then 400/422s at runtime with no
+# clue why. So instead of trusting "applied/skipped" counts, we grep the tree for
+# a distinctive symbol of each CRITICAL fix. Present (whether via our patch or
+# because upstream already shipped it) = good. Absent = this fix is NOT in your
+# Hermes and the named Palantir path WILL break — we say so loudly and exit non-zero.
+# Format: LABEL|symbol|file|impact-if-missing
+CRITICAL="\
+GEMINI_422_nulls|_strip_nulls|agent/gemini_native_adapter.py|Gemini tool-results 422 (null in functionResponse)
+GEMINI_422_role|joined_system|agent/gemini_native_adapter.py|every Gemini request 422 (role in systemInstruction)
+GEMINI_proxy_auth|/api/v2/llm/proxy/google|agent/auxiliary_client.py|Gemini proxy routing/bearer broken
+GPT5_dotted_RID|dot_tail|utils.py|gpt-5 proxy 400 on every compaction (max_tokens vs max_completion_tokens)
+REASONING_strip|strip_reasoning_details_for_non_openrouter|agent/message_sanitization.py|tool-call 400 on strict proxy (reasoning_details leak)
+REASONING_wire|strip_reasoning_details_for_non_openrouter|agent/turn_api_request.py|reasoning_details strip not wired into the turn loop"
+
+missing=0
+say "Verifying Palantir-critical fixes are present in the tree"
+while IFS='|' read -r label sym file impact; do
+  [ -n "$label" ] || continue
+  if git -C "$SRC" grep -q -F "$sym" -- "$file" 2>/dev/null; then
+    ok "$label present"
+  else
+    missing=$((missing+1))
+    warn "MISSING: $label  —  $impact"
+    warn "         (expected symbol \`$sym\` in $file)"
+  fi
+done <<EOF
+$CRITICAL
+EOF
+
+if [ "$missing" -gt 0 ]; then
+  printf '\n\033[1;31m[x]\033[0m %s\n' "$missing critical Palantir fix(es) are NOT in your Hermes tree."
+  printf '\033[1;31m   \033[0m %s\n' "Palantir WILL fail on the paths listed above (400/422), silently, at runtime."
+  printf '\033[1;31m   \033[0m %s\n' "A fix went missing because a newer upstream refactored past its patch."
+  printf '\033[1;31m   \033[0m %s\n' "ACTION: re-cut that patch against current upstream (git format-patch of the"
+  printf '\033[1;31m   \033[0m %s\n' "fix), or check whether upstream already shipped an equivalent. Do NOT ship"
+  printf '\033[1;31m   \033[0m %s\n' "this install as 'Palantir works' until this is green."
+  exit 3
+fi
+
+say "All Palantir-critical fixes present ✓"
 if [ "$skipped" -gt 0 ]; then
-  warn "Some patches were skipped. If Palantir 400/422s on a tool call or Gemini,"
-  warn "the matching fix may need a manual rebase — or upstream already shipped it."
+  warn "$skipped non-critical patch(es) were skipped (cosmetic/vision/aux) — Palantir core is fine."
 fi
 exit 0
