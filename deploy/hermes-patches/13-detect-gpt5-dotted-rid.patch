@@ -1,0 +1,73 @@
+From dfeb87556077d1b27cb1eac9f6e878ebbb0e1a1c Mon Sep 17 00:00:00 2001
+From: ZoloZiak <zoloziak@users.noreply.github.com>
+Date: Mon, 31 Aug 2026 12:50:24 +0200
+Subject: [PATCH] fix(models): detect gpt-5/4o/o-series inside dotted RID model
+ ids
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+model_forces_max_completion_tokens() only stripped a leading vendor prefix
+on "/" (openai/gpt-5.4 -> gpt-5.4). Proxy RID identifiers embed the family
+name after the last dot instead, e.g.
+"ri.language-model-service..language-model.gpt-5-5". The "/"-only split left
+the whole RID intact, so it failed the gpt-5 prefix check and the caller
+sent `max_tokens` — which gpt-5 rejects with HTTP 400 "Unsupported
+parameter: 'max_tokens' is not supported with this model. Use
+'max_completion_tokens' instead."
+
+Main-loop chat calls happened to pass (max_tokens=None -> param omitted),
+but the compaction/summary path sets an explicit token budget, so every
+compaction on a gpt-5 RID 400'd.
+
+Now also check the last dot-segment against the same family rules. The check
+is tail-only, so an embedded "gpt-4" elsewhere in an id can't false-positive
+(claude / gemini RIDs still return False — regression-guarded).
+
+Verified against a live strict proxy: RID + max_tokens -> 400, RID +
+max_completion_tokens -> 200. Adds RID regression tests.
+---
+ utils.py | 27 ++++++++++++++++++++++++---
+ 1 file changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/utils.py b/utils.py
+index beeb8668200..c39749a808d 100644
+--- a/utils.py
++++ b/utils.py
+@@ -668,9 +668,30 @@ def base_url_path(base_url: str) -> str:
+ 
+ 
+ def model_forces_max_completion_tokens(model: str) -> bool:
+-    """True for OpenAI families that reject ``max_tokens`` (HTTP 400 ``unsupported_parameter``)."""
+-    m = (model or "").strip().lower().rsplit("/", 1)[-1]
+-    return m.startswith(("gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4"))
++    """True for OpenAI families that reject ``max_tokens`` (HTTP 400 ``unsupported_parameter``).
++
++    Handles vendor prefixes like ``openai/gpt-5.4`` by stripping to the tail.
++    Also handles proxy RID model identifiers that embed the family name in a
++    dotted tail, e.g. Palantir's
++    ``ri.language-model-service..language-model.gpt-5-5`` — the real family
++    (``gpt-5-5``) lives after the last ``.``, which a ``/``-only split misses,
++    silently sending ``max_tokens`` and drawing a 400 from the upstream model.
++    """
++    m = (model or "").strip().lower()
++    if not m:
++        return False
++
++    def _tail_forces(name: str) -> bool:
++        return name.startswith(("gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4"))
++
++    # Vendor-prefix tail (openai/gpt-5.4 → gpt-5.4).
++    slash_tail = m.rsplit("/", 1)[-1] if "/" in m else m
++    if _tail_forces(slash_tail):
++        return True
++    # Dotted RID tail (…language-model.gpt-5-5 → gpt-5-5). Checked only as the
++    # last dot-segment so an embedded "gpt-4" elsewhere can't false-positive.
++    dot_tail = slash_tail.rsplit(".", 1)[-1] if "." in slash_tail else slash_tail
++    return _tail_forces(dot_tail)
+ 
+ 
+ def base_url_origin(base_url: str) -> tuple[str, str, int]:
+-- 
+2.54.0 (Apple Git-157)
+

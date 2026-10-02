@@ -455,8 +455,15 @@ installed into `toolkit/node_modules`; the installer exports `NODE_PATH` so the 
 resolves the SDK by bare name on any box — no absolute paths baked in. `palantir_client.py`
 is pure stdlib (no pip install needed).
 
-Palantir support is config-level (custom providers via `hermes config set`), not source
-patches, so it survives `hermes update`. Your token stays in `~/.hermes/.env`, never in
+Palantir support has **two layers**. The provider wiring is config-level (custom
+providers via `hermes config set`), so that part survives `hermes update` untouched.
+But a handful of **strict-proxy fixes live in Hermes core** (tool-call 400s, Gemini
+422s, the `gpt-5` dotted-RID `max_tokens` bug) and are not merged upstream yet — those
+ship as git patches under `deploy/hermes-patches/` and are re-applied by
+`deploy/apply_hermes_patches.sh` (the installer runs it; re-run it yourself after every
+`hermes update`). It only applies patches that still apply cleanly and **skips any that
+a newer upstream has refactored past or already fixed**, so your Hermes tree always stays
+clean — see "Hermes core patches" below. Your token stays in `~/.hermes/.env`, never in
 this repo. **There is no TLS-proxy / custom-CA / proxy layer anywhere in the
 published code** — the client uses your system trust store like any normal program.
 
@@ -484,6 +491,30 @@ Developer Tier has no per-token billing — only per-minute throughput limits (r
 wait a moment and continue. Check exact limits in Foundry under *Resource Management → AIP
 usage and limits*, and enabled models under *Language Models* (if names differ from the
 defaults, adjust the `palantir-*` provider blocks in `~/.hermes/config.yaml`).
+
+#### Hermes core patches (and how they behave on `hermes update`)
+
+The strict-proxy fixes Palantir needs are plain `git` patches in `deploy/hermes-patches/`.
+`deploy/apply_hermes_patches.sh` applies them to your Hermes git checkout
+(`~/.hermes/hermes-agent`). The important property for upgrades:
+
+- **It is self-adapting, not a blind re-jam.** For each patch it first checks whether the
+  change is *already present* (upstream shipped it, or it was applied before) → skips it.
+  Then it tries a clean `git apply`. If a newer upstream has refactored the surrounding code
+  so the patch no longer applies, it is **skipped with a clear message — never force-applied**.
+  Your Hermes tree never ends up with conflict markers. (That exact "force-jammed a patch into
+  moved code" mistake is what the earlier `--3way` version did; this version removed it.)
+- **Re-run it after every `hermes update`:** `bash deploy/apply_hermes_patches.sh`. A fresh
+  upstream may have merged a fix (→ "already present", patch becomes a no-op) or moved the
+  code (→ "skipped"). Either way it's safe and idempotent — running it twice changes nothing.
+- **If a fix gets skipped and Palantir then 400/422s** on a tool call or Gemini request, that
+  patch needs re-cutting against the new upstream (`git format-patch` of the fix on a current
+  tree). The bundle is a point-in-time snapshot of fixes that aren't upstream yet; as upstream
+  catches up, individual patches naturally retire.
+
+This is the honest trade-off of running fixes that aren't merged yet: the patches track a
+moving target, so they're applied defensively (clean-or-skip) rather than pretended to be
+permanent. Non-Palantir users can ignore this entirely — the patches simply never match.
 
 Prereqs the script expects to already exist (or installs): [Hermes Agent](https://hermes-agent.nousresearch.com),
 Docker (for HyperspaceDB), Node 18+ with npm, Python 3.10+ with `venv`. The installer

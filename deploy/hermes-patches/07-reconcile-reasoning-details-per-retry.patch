@@ -1,0 +1,71 @@
+From cad83877c1ee6c7f04aabb7e264c3bd1c405e26c Mon Sep 17 00:00:00 2001
+From: ZoloZiak <zoloziak@users.noreply.github.com>
+Date: Sun, 23 Aug 2026 19:02:50 +0200
+Subject: [PATCH] fix(agent): reconcile reasoning_details per retry attempt,
+ not once at build (review #92945)
+
+---
+ agent/turn_api_request.py | 10 ++++++++++
+ agent/turn_context.py     | 25 +++++++++++--------------
+ 2 files changed, 21 insertions(+), 14 deletions(-)
+
+diff --git a/agent/turn_api_request.py b/agent/turn_api_request.py
+index b00934cc722..8d98a314f9c 100644
+--- a/agent/turn_api_request.py
++++ b/agent/turn_api_request.py
+@@ -108,6 +108,16 @@ def build_api_request(
+     # require reasoning_content — re-apply the echo-back pad (idempotent) and re-render
+     # the prompt-cache decoration for the current provider.
+     agent._reapply_reasoning_echo_for_provider(api_messages)
++    # Same staleness class: OpenRouter-only 'reasoning_details' must be reconciled
++    # against the provider serving THIS attempt (mid-retry fallback can have just
++    # switched it). Recompute the OpenRouter flag from live agent state each
++    # iteration; idempotent, O(n), history keeps the field for a switch back.
++    from agent.message_sanitization import strip_reasoning_details_for_non_openrouter
++    strip_reasoning_details_for_non_openrouter(
++        api_messages,
++        (getattr(agent, "provider", "") or "").strip().lower() == "openrouter"
++        or agent._is_openrouter_url(),
++    )
+     api_messages, _moa_prepared_request, tools_for_api = (
+         _redecorate_prompt_cache_for_provider(
+             agent, api_messages, system_message=system_message, moa_prepared=_moa_prepared_request,
+diff --git a/agent/turn_context.py b/agent/turn_context.py
+index 3609187b5c3..590d0d39d3a 100644
+--- a/agent/turn_context.py
++++ b/agent/turn_context.py
+@@ -1276,20 +1276,17 @@ def build_api_messages(
+         # wire for every route that does not replay it (OpenRouter/Nous do).
+         api_messages.append(api_msg)
+ 
+-    # LOCAL MOD: reconcile OpenRouter-only 'reasoning_details' against the active
+-    # provider. OpenRouter emits it on reasoning turns and consumes it back for
+-    # continuity (kept verbatim above); it is NOT standard Chat Completions schema,
+-    # so strict proxies reject it. The observed failure is the Palantir Foundry LLM
+-    # proxy 400-ing with 'unrecognizedProperty=reasoning_details' after a session
+-    # mixes an OpenRouter reasoning turn into history and then routes to Palantir —
+-    # the session then loops on the 400 until /new. Strip from the outgoing API copy
+-    # for every non-OpenRouter provider (history keeps it, so a switch back to
+-    # OpenRouter still has it).
+-    from agent.message_sanitization import strip_reasoning_details_for_non_openrouter
+-    _is_or_provider = (getattr(agent, "provider", "") or "").strip().lower() == "openrouter" or (
+-        agent._is_openrouter_url()
+-    )
+-    strip_reasoning_details_for_non_openrouter(api_messages, _is_or_provider)
++    # NOTE: OpenRouter-only 'reasoning_details' is deliberately NOT reconciled
++    # here. OpenRouter emits it on reasoning turns and consumes it back for
++    # continuity (kept verbatim in the assistant branch above); it is NOT
++    # standard Chat Completions schema, so strict proxies reject it with 400
++    # unrecognizedProperty (observed on the Palantir Foundry LLM proxy — session
++    # loops on the 400 until /new). Which side wins depends on the provider that
++    # actually serves each request, and mid-retry fallback can switch that
++    # provider AFTER this point — so the reconcile runs per attempt inside the
++    # retry loop, right next to _reapply_reasoning_echo_for_provider (same
++    # built-once-vs-current-provider staleness class). History keeps the field,
++    # so a later switch back to OpenRouter still finds it.
+ 
+     # Final system message = cached prompt + ephemeral additions (API-time only).
+     # Plugin/recall context goes into the user message, never the system prompt: the
+-- 
+2.54.0 (Apple Git-157)
+

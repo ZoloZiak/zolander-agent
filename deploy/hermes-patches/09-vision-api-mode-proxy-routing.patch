@@ -1,0 +1,330 @@
+From 6834fcfbbaaecfaf033fcf987e82c4f792ac1380 Mon Sep 17 00:00:00 2001
+From: ZoloZiak <zoloziak@users.noreply.github.com>
+Date: Mon, 1 Jun 2026 23:34:46 +0200
+Subject: [PATCH] vision: honour api_mode for routing on proxy providers
+ (Palantir, custom)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Users running a vision-capable Claude / GPT / Gemini model behind a custom
+proxy provider (Palantir Foundry, Bedrock-shaped corporate gateway,
+self-hosted vLLM behind a branded key, etc.) were silently routed to the
+auxiliary vision LLM even though the active main model handles images
+natively.
+
+Concrete failure on this user's config — provider `palantir-claude47`
+(a `providers:` entry with `api_mode: anthropic_messages` proxying
+Claude 4.7 Opus via Palantir's `/anthropic` endpoint), invoking
+vision_analyze on a local screenshot:
+
+  decide_image_input_mode("palantir-claude47", "ri.language-model-service..…", cfg)
+  → "text"      (was "native" expected)
+  _supports_media_in_tool_results(...) → False
+  _should_use_native_vision_fast_path() → False
+
+  Effect: vision_analyze fired the auxiliary vision client against
+  the active main provider/model (i.e. shipped a chat-completions
+  vision call to Palantir Anthropic with the opaque `ri.*` resource
+  ID), returning errors. The active main model — an Opus that
+  natively reads pixels — never saw the image.
+
+Root cause: both routing predicates keyed solely on the provider id
+string (`anthropic` / `openai` / `openrouter` / `gemini`). Custom
+`providers:` / `custom_providers:` entries have user-chosen ids
+(`palantir-claude47`, `corp-llm-prod-3`) so the id-based allowlist
+misses them, and models.dev has no entry for the proxy's opaque
+resource id so `_lookup_supports_vision` returns None.
+
+Fix — three small, layered changes:
+
+1. `agent.auxiliary_client._read_main_api_mode()` (new public helper).
+
+   Resolves the active main provider's wire-protocol mode by first
+   consulting the runtime override (`_RUNTIME_MAIN_API_MODE`, set by
+   AIAgent at turn start to track CLI `/model` switches), then
+   falling back to config.yaml's keyed `providers:` entry or
+   `custom_providers:` list. Returns the empty string when the
+   active provider is canonical/aggregator (those pin their wire
+   inside the adapter and don't carry an explicit api_mode field).
+
+2. `tools.vision_tools._supports_media_in_tool_results`: when the
+   provider id misses every named allowlist, fall back to checking
+   the wire-protocol mode. `anthropic_messages` / `anthropic` /
+   `chat_completions` / `openai` / `responses` / `openai_responses`
+   are wire-protocols whose tool-result messages syntactically carry
+   image content — the predicate trusts the wire, not the brand
+   label on top.
+
+3. `agent.image_routing.decide_image_input_mode` (auto mode): when
+   models.dev returns None (the common path for proxy/aggregator
+   model ids), upgrade to "native" only if (a) the wire-protocol
+   carries images AND (b) the model slug substring-matches a known
+   vision-capable family (`opus` / `sonnet` / `haiku` / `claude-3+`
+   / `gpt-4o` / `gpt-5+` / `gemini-1.5+` / `pixtral` / `llama-3.2+`
+   / `qwen*-vl` / `molmo` / `internvl` / `minicpm-v`). Both must
+   agree, so a known-vision slug routed through an exotic wire
+   stays on the text path, and a text-only model routed through a
+   vision-capable wire also stays text.
+
+   `_lookup_supports_vision` returning False is still a hard
+   negative (explicit user override or definitive models.dev miss),
+   so users who declared a capable model as text-only via
+   `model.supports_vision: false` keep their behaviour.
+
+The vision-family substring list (`_is_known_vision_capable_model_name`)
+is conservative and additive — false negatives are recoverable (legacy
+aux-LLM text fallback fires) but false positives silently inject pixels
+into a text-only model, so additions should land alongside empirical
+confirmation that the slug substring is unique to vision-capable models.
+
+Manual smoke (this user's live setup):
+
+  Before — provider=palantir-claude47,
+           model=ri.language-model-service..language-model.anthropic-claude-4-7-opus:
+    mode=text, media_ok=False, fast_path=False
+    → aux vision client called instead of attaching to the main model.
+
+  After:
+    mode=native, media_ok=True, fast_path=True
+    → image attached to the main model's next turn as multimodal
+      tool-result; Opus reads the pixels directly.
+
+  Regression guard:
+    provider=fictional-corp, model=corp-summarizer-v1, wire=chat_completions
+    → mode=text (slug missing from vision-family list).
+
+Tests in tests/agent/test_vision_routing_31179.py and
+tests/tools/test_vision_native_fast_path.py still pass when run in
+isolation; pre-existing test-pollution between tests/tools/test_vision_tools.py
+modules (13 unrelated test-pollution failures present on main both with
+and without this patch) is unchanged.
+---
+ agent/auxiliary_client.py | 48 +++++++++++++++++++++
+ agent/image_routing.py    | 88 +++++++++++++++++++++++++++++++++++++--
+ tools/vision_tools.py     | 37 +++++++++++++++-
+ 3 files changed, 168 insertions(+), 5 deletions(-)
+
+diff --git a/agent/auxiliary_client.py b/agent/auxiliary_client.py
+index 721c85e8d70..1a3308c7af7 100644
+--- a/agent/auxiliary_client.py
++++ b/agent/auxiliary_client.py
+@@ -2477,6 +2477,54 @@ _read_main_api_key = functools.partial(_read_main_field, "api_key", readonly=Fal
+ _read_main_base_url = functools.partial(_read_main_field, "base_url", readonly=False)
+ 
+ 
++def _read_main_api_mode() -> str:
++    """Read the active main provider's wire-protocol mode.
++
++    Returns one of ``"anthropic_messages"``, ``"chat_completions"``,
++    ``"responses"``, etc. — whatever the resolved provider declares in
++    config.yaml under ``providers.<slug>.api_mode`` /
++    ``custom_providers[].api_mode``. Falls back to "" when the active
++    provider has no explicit api_mode (which is what aggregator/canonical
++    providers like ``openai``/``anthropic``/``openrouter`` set, since
++    those are pinned to one wire by their adapter).
++
++    Used by image-routing decisions that need to know the wire protocol
++    behind the active provider id (e.g. a Palantir Foundry custom
++    provider with ``api_mode: anthropic_messages`` should be treated as
++    Anthropic-native for vision purposes — the model is a Claude Opus
++    even though the provider id is ``palantir-claude47``).
++    """
++    override = _RUNTIME_MAIN_API_MODE
++    if isinstance(override, str) and override.strip():
++        return override.strip().lower()
++    try:
++        from hermes_cli.config import load_config
++        cfg = load_config() or {}
++        prov = _read_main_provider()
++        if not prov:
++            return ""
++        # custom: scheme — ``custom:openrouter`` etc. — strip prefix and
++        # consult ``custom_providers:`` list.
++        if prov.startswith("custom:"):
++            slug = prov[len("custom:"):]
++            for cp in cfg.get("custom_providers") or []:
++                if not isinstance(cp, dict):
++                    continue
++                cp_slug = str(cp.get("slug") or cp.get("name") or "").strip().lower()
++                if cp_slug == slug:
++                    return str(cp.get("api_mode") or "").strip().lower()
++            return ""
++        # Keyed providers under ``providers:`` — palantir-claude47, etc.
++        prv = cfg.get("providers") or {}
++        if isinstance(prv, dict):
++            entry = prv.get(prov) or prv.get(prov.lower())
++            if isinstance(entry, dict):
++                return str(entry.get("api_mode") or "").strip().lower()
++    except Exception:
++        pass
++    return ""
++
++
+ def _resolve_moa_aggregator(preset_name: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+     """MoA preset → aggregator (provider, model); (None, None) if unresolvable. None/"" = default preset.
+ 
+diff --git a/agent/image_routing.py b/agent/image_routing.py
+index 9941961cbca..895acd01dea 100644
+--- a/agent/image_routing.py
++++ b/agent/image_routing.py
+@@ -368,6 +368,52 @@ def _lookup_supports_vision(
+     return None
+ 
+ 
++def _is_known_vision_capable_model_name(model: str) -> bool:
++    """Heuristic: does the model slug name a known vision-capable family?
++
++    Used as a backstop for custom/proxy providers whose ``api_mode``
++    (anthropic_messages / chat_completions) confirms the wire protocol
++    can carry images, but where models.dev has no entry for the proxy's
++    opaque resource ID and the user hasn't set ``model.supports_vision``.
++
++    Recognises substrings present in modern vision-capable family names:
++    Claude 3+ (Opus/Sonnet/Haiku), GPT-4o, GPT-5, GPT-4 Turbo Vision,
++    Gemini 1.5+/2/3, Llama 3.2/3.3 Vision, Pixtral, Qwen-VL, etc. The
++    list is conservative and additive — false negatives are recoverable
++    (the user gets the legacy aux-LLM text fallback) but false positives
++    silently inject pixels into a text-only model.
++    """
++    if not isinstance(model, str):
++        return False
++    m = model.strip().lower()
++    if not m:
++        return False
++    # Anthropic Claude 3+ are all vision-capable. The proxy id may carry
++    # the family name in any of these forms, so substring-match.
++    if "claude-3" in m or "claude-4" in m or "claude-5" in m:
++        return True
++    if "opus" in m or "sonnet" in m or "haiku" in m:
++        return True
++    # OpenAI GPT-4o family + GPT-5+ multimodal
++    if "gpt-4o" in m or "gpt-4-vision" in m or "gpt-4-turbo" in m:
++        return True
++    if "gpt-5" in m or "gpt-6" in m or "o3" in m or "o4" in m:
++        return True
++    # Gemini 1.5+ all vision; older 1.0 not (rarely seen)
++    if "gemini-1.5" in m or "gemini-2" in m or "gemini-3" in m:
++        return True
++    if "gemini-pro-vision" in m or "gemini-flash" in m:
++        return True
++    # Open-weight vision families
++    if "pixtral" in m or "llama-3.2" in m or "llama-3.3" in m:
++        return True
++    if "qwen2-vl" in m or "qwen2.5-vl" in m or "qwen3-vl" in m:
++        return True
++    if "molmo" in m or "internvl" in m or "minicpm-v" in m:
++        return True
++    return False
++
++
+ def decide_image_input_mode(
+     provider: str,
+     model: str,
+@@ -382,9 +428,45 @@ def decide_image_input_mode(
+         return mode_cfg
+     if _explicit_aux_vision_override(cfg):  # auto: an explicit auxiliary.vision backend wins
+         return "text"
+-    # Keep the three-argument call contract for callers/tests that replace the lookup hook.
+-    extra = {"requested_provider": requested_provider} if requested_provider else {}
+-    return "native" if _lookup_supports_vision(provider, model, cfg, **extra) is True else "text"
++    # auto + no explicit aux override: consult models.dev capability. Keep the
++    # long-standing three-argument call contract for callers/tests that replace
++    # the capability lookup hook.
++    if requested_provider:
++        supports = _lookup_supports_vision(
++            provider,
++            model,
++            cfg,
++            requested_provider=requested_provider,
++        )
++    else:
++        supports = _lookup_supports_vision(provider, model, cfg)
++    if supports is True:
++        return "native"
++    if supports is False:
++        # Hard negative: explicit user override or definitive models.dev miss.
++        return "text"
++
++    # supports is None — unknown to models.dev and no user override. This
++    # is the common path for custom/proxy providers (Palantir Foundry,
++    # self-hosted vLLM, branded aggregators) where the provider id is
++    # arbitrary. Fall back to (a) wire-protocol awareness from the
++    # active provider's ``api_mode``, plus (b) a substring check on the
++    # model slug for known vision families. Both must agree to upgrade
++    # to native, so a model name that contains "gpt-4o" still routes to
++    # text if the wire is something exotic that doesn't carry images.
++    try:
++        from agent.auxiliary_client import _read_main_api_mode
++        wire = _read_main_api_mode()
++    except Exception:
++        wire = ""
++    wire_carries_images = wire in {
++        "anthropic_messages", "anthropic",
++        "chat_completions", "openai",
++        "responses", "openai_responses",
++    }
++    if wire_carries_images and _is_known_vision_capable_model_name(model):
++        return "native"
++    return "text"
+ 
+ 
+ # Image size handling is REACTIVE: attach at full size and let
+diff --git a/tools/vision_tools.py b/tools/vision_tools.py
+index 979b3f982fa..6c8419ef6bc 100644
+--- a/tools/vision_tools.py
++++ b/tools/vision_tools.py
+@@ -442,7 +442,13 @@ def _profile_rejects_tool_media(provider: str, model: str = "") -> bool:
+ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
+     """Whether provider+model accepts image content inside a tool-result message. Unknown
+     providers are False (caller falls back to aux-LLM text) unless their ``ProviderProfile``
+-    declares ``supports_vision``; ``supports_vision_tool_messages=False`` is a hard veto."""
++    declares ``supports_vision``; ``supports_vision_tool_messages=False`` is a hard veto.
++
++    Custom proxy providers (Palantir Foundry, self-hosted vLLM behind a branded key, etc.)
++    are recognised by their wire-protocol mode (``api_mode`` in config.yaml) rather than by
++    provider id, since the id is user-controlled and may be anything (``palantir-claude47``).
++    The wire decides whether tool-result image blocks are accepted, not the brand label.
++    """
+     p = provider.strip().lower() if isinstance(provider, str) else ""
+     if not p or _profile_rejects_tool_media(p, model):
+         return False
+@@ -456,7 +462,34 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
+         profile = get_provider_profile(p)
+         return profile is not None and bool(profile.supports_vision)
+     except Exception:
+-        return False
++        pass
++
++    # Custom / proxy providers: trust the wire-protocol mode declared in
++    # config.yaml. The ``api_mode`` is what determines whether tool-result
++    # image blocks are syntactically accepted, regardless of how the
++    # caller branded the provider slug. A Palantir Foundry entry with
++    # ``api_mode: anthropic_messages`` is wire-identical to native
++    # Anthropic; OpenAI-compat proxies declare ``chat_completions`` and
++    # accept ``image_url`` parts in tool messages.
++    try:
++        from agent.auxiliary_client import _read_main_api_mode
++        api_mode = _read_main_api_mode()
++    except Exception:
++        api_mode = ""
++    if api_mode in {
++        "anthropic_messages",
++        "anthropic",
++        "chat_completions",
++        "openai",
++        "responses",
++        "openai_responses",
++    }:
++        return True
++
++    # Other vision-capable provider stacks. Conservative default: False.
++    # Add explicit entries here as we verify each provider's tool-result
++    # multimodal support empirically.
++    return False
+ 
+ 
+ def _accepts_tool_result_images(provider: str, model: str, cfg: Optional[Dict[str, Any]]) -> bool:
+-- 
+2.54.0 (Apple Git-157)
+

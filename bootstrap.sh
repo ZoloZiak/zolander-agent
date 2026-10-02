@@ -30,6 +30,13 @@ warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Directory this script lives in (empty/unreliable when run via `curl | bash`,
+# in which case the repo is cloned to $ROOT at step 2 and we use that instead).
+SELF_DIR=""
+if [ -n "${BASH_SOURCE:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
 OS="$(uname -s)"
 case "$OS" in
   Linux)  PLATFORM="linux" ;;
@@ -72,6 +79,23 @@ else
   git clone "$REPO_URL" "$ROOT"
 fi
 mkdir -p "$ROOT/state" "$ROOT/logs" "$ROOT/denniky" "$ROOT/identity"
+
+# --- 2b. Hermes core patches (Palantir strict-proxy fixes) ------------------
+# A fresh Hermes is always latest upstream. A few fixes the Palantir Foundry
+# proxy needs (tool-call 400s, Gemini 422s, gpt-5 dotted-RID max_tokens) are not
+# merged upstream yet. This applies the ones that still apply cleanly and skips
+# any upstream has refactored past — the tree stays clean. Harmless if you don't
+# use Palantir (nothing matches, everything skips). Re-run after `hermes update`.
+APPLY_PATCHES=""
+for d in "$SELF_DIR" "$ROOT"; do
+  [ -n "$d" ] && [ -f "$d/deploy/apply_hermes_patches.sh" ] && { APPLY_PATCHES="$d/deploy/apply_hermes_patches.sh"; break; }
+done
+if [ -n "$APPLY_PATCHES" ]; then
+  say "2b/9 Hermes core patches (Palantir strict-proxy)"
+  bash "$APPLY_PATCHES" || warn "core patch step had issues — Palantir may 400/422; other providers unaffected"
+else
+  warn "deploy/apply_hermes_patches.sh not found — Palantir core fixes NOT applied (Palantir may 400/422)"
+fi
 
 # --- 3. Python venv + deps --------------------------------------------------
 say "3/9  Python environment ($VENV)"

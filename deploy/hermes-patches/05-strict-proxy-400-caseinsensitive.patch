@@ -1,0 +1,32 @@
+From 4929acc053f4e82a66aead4a181f2509b07a30ce Mon Sep 17 00:00:00 2001
+From: ZoloZiak <zoloziak@users.noreply.github.com>
+Date: Sun, 23 Aug 2026 18:39:32 +0200
+Subject: [PATCH] fix(agent): case-insensitive strict-proxy 400 match + warning
+ log + tests (review #93035)
+
+---
+ agent/error_classifier.py | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/agent/error_classifier.py b/agent/error_classifier.py
+index 537e139fe4d..f8383655b6e 100644
+--- a/agent/error_classifier.py
++++ b/agent/error_classifier.py
+@@ -863,6 +863,14 @@ def _provider_special_cases(c: _Ctx) -> Optional[Verdict]:
+         and "reasoning_details" in msg
+         and ("unrecognized" in msg or "unknown" in msg or "invalid" in msg)
+     ):
++        # The keyword net is deliberately broad: a 400 that merely mentions
++        # reasoning_details plus one of these words routes here even when the
++        # real problem was elsewhere. Recovery is harmless either way (retry
++        # omits the field), but log it so one-round-trip misroutes stay visible.
++        logger.warning(
++            "400 mentions reasoning_details + unrecognized/unknown/invalid "
++            "(strict-proxy shape) — routing to thinking_signature strip-and-retry"
++        )
+         return _v(_R.thinking_signature, should_compress=False)
+     # Anthropic long-context tier gate (429 "extra usage" + "long context").
+     if status == 429 and "extra usage" in msg and "long context" in msg:
+-- 
+2.54.0 (Apple Git-157)
+

@@ -1,0 +1,186 @@
+From 2fee6496a13d3d15aa22c73641c3eb93da4396a1 Mon Sep 17 00:00:00 2001
+From: ZoloZiak <zoloziak@users.noreply.github.com>
+Date: Sat, 29 Aug 2026 13:31:27 +0200
+Subject: [PATCH] fix(agent): clamp max_tokens to the fallback model's output
+ cap
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+agent.max_tokens is lifted once at init from the PRIMARY provider's
+max_output_tokens (e.g. an Anthropic proxy pinning 200000). When the
+primary fails and try_activate_fallback swaps to a fallback provider, it
+updated the context_compressor's context window but left max_tokens at the
+primary's value. A fallback provider with a smaller output cap (e.g. Groq's
+16384) then rejected EVERY request with a deterministic 400 ("max_tokens
+exceeds the output cap for this model"), which the loop does not route into
+compression — so the whole session was poisoned until the primary recovered.
+
+Fix mirrors the existing context_compressor update in the same function:
+
+- New hermes_cli.timeouts.get_provider_max_output_tokens(provider, model),
+  a direct mirror of get_provider_request_timeout: per-model
+  max_output_tokens (or max_tokens alias) under providers.<id>.models.<model>
+  wins, then a provider-level fallback, else None ("no config → untouched").
+- try_activate_fallback clamps agent.max_tokens down to the fallback cap
+  when the current budget exceeds it (or is None). Never raises a smaller
+  user budget; unknown provider leaves it untouched.
+- _primary_runtime snapshots max_tokens (init + switch_model) and
+  restore_primary_runtime restores it, so the primary's larger budget comes
+  back on recovery.
+
+Regression test: get_provider_max_output_tokens resolution (per-model wins,
+provider-level fallback, max_tokens alias, unknown → None, empty id guard).
+---
+ agent/agent_init.py              |  3 ++
+ agent/agent_runtime_helpers.py   |  9 +++++
+ agent/chat_completion_helpers.py | 20 +++++++++++
+ hermes_cli/timeouts.py           | 60 +++++++++++++++++++++++++++++++-
+ 4 files changed, 91 insertions(+), 1 deletion(-)
+
+diff --git a/agent/agent_init.py b/agent/agent_init.py
+index c98d5666247..ead990bf8ef 100644
+--- a/agent/agent_init.py
++++ b/agent/agent_init.py
+@@ -2261,6 +2261,9 @@ def _snapshot_primary_runtime(agent):
+         "use_prompt_caching": agent._use_prompt_caching,
+         "use_native_cache_layout": agent._use_native_cache_layout,
+         "reasoning_echo_flag": getattr(agent, "_reasoning_echo_flag", False),
++        # Output-token budget lifted from the primary provider. Snapshotted so
++        # restore_primary_runtime can undo any fallback clamp on recovery.
++        "max_tokens": getattr(agent, "max_tokens", None),
+         # Engine state _try_activate_fallback() overwrites (getattr: plugin engines may lack them).
+         "compressor_model": getattr(_cc, "model", agent.model),
+         "compressor_base_url": getattr(_cc, "base_url", agent.base_url),
+diff --git a/agent/agent_runtime_helpers.py b/agent/agent_runtime_helpers.py
+index 9944ab6873c..68dbd533db5 100644
+--- a/agent/agent_runtime_helpers.py
++++ b/agent/agent_runtime_helpers.py
+@@ -997,6 +997,12 @@ def _apply_primary_runtime_fields(agent, rt: Dict[str, Any]) -> None:
+     agent.base_url = rt["base_url"]           # setter updates _base_url_lower
+     from hermes_cli.providers import is_actual_route
+     agent.api_mode = "chat_completions" if is_actual_route(agent.provider, agent.base_url) else rt["api_mode"]
++    # Undo any output-cap clamp applied by try_activate_fallback so the primary's
++    # larger budget is available again on recovery. Only restore when the snapshot
++    # actually carried one (older snapshots predate the field); missing key leaves
++    # the current value untouched.
++    if "max_tokens" in rt:
++        agent.max_tokens = rt["max_tokens"]
+     if hasattr(agent, "_transport_cache"):
+         agent._transport_cache.clear()
+     agent.api_key = rt["api_key"]
+@@ -2258,6 +2264,9 @@ def _build_primary_runtime_snapshot(agent, api_mode) -> Dict[str, Any]:
+         # See #75091.
+         "request_overrides": dict(getattr(agent, "request_overrides", {}) or {}),
+         "runtime_capabilities": dict(getattr(agent, "runtime_capabilities", {}) or {}),
++        # Output-token budget lifted from the primary provider; restored on recovery
++        # to undo any fallback clamp (get_provider_max_output_tokens).
++        "max_tokens": getattr(agent, "max_tokens", None),
+         "compressor_model": getattr(cc, "model", agent.model),
+         "compressor_base_url": getattr(cc, "base_url", agent.base_url),
+         "compressor_api_key": getattr(cc, "api_key", ""),
+diff --git a/agent/chat_completion_helpers.py b/agent/chat_completion_helpers.py
+index 72e962c62bb..cf8e1474344 100644
+--- a/agent/chat_completion_helpers.py
++++ b/agent/chat_completion_helpers.py
+@@ -2162,6 +2162,26 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None, reset_a
+                 provider=fb_provider, base_url=fb_base_url, api_mode=fb_api_mode, model=fb_model)
+             agent._ensure_lmstudio_runtime_loaded()  # LM Studio: preload before probing context length
+             _update_fallback_context_compressor(agent)
++            # Clamp the output-token budget to the fallback model's cap. ``agent.max_tokens``
++            # is lifted once at init from the PRIMARY provider's ``max_output_tokens`` (e.g. an
++            # Anthropic proxy pinning 200000). Without re-clamping, that primary budget carries
++            # onto a fallback with a smaller output cap (e.g. Groq's 16384), which then rejects
++            # EVERY request with a deterministic "max_tokens exceeds the output cap" 400 the loop
++            # does not route into compression — poisoning the session. Mirror of the
++            # context_compressor update just above. restore_primary_runtime puts the primary
++            # budget back from the snapshot on recovery.
++            try:
++                from hermes_cli.timeouts import get_provider_max_output_tokens
++                _fb_cap = get_provider_max_output_tokens(fb_provider, fb_model)
++                if isinstance(_fb_cap, int) and _fb_cap > 0:
++                    _cur = getattr(agent, "max_tokens", None)
++                    if not isinstance(_cur, int) or _cur > _fb_cap:
++                        agent.max_tokens = _fb_cap
++                        logger.info("Fallback %s/%s: clamped max_tokens %s → %s (fallback output cap)",
++                            fb_provider, fb_model, _cur, _fb_cap)
++            except Exception as _cap_err:
++                logger.debug("Fallback %s/%s: could not resolve output cap; leaving max_tokens unchanged: %s",
++                    fb_provider, fb_model, _cap_err)
+             _reresolve_fallback_reasoning_config(agent)
+             _rescope_fallback_extra_body(agent, old_model, old_provider, old_base_url)
+             rewrite_prompt_model_identity(agent, fb_model, fb_provider)
+diff --git a/hermes_cli/timeouts.py b/hermes_cli/timeouts.py
+index 71b1880c177..14e962411e5 100644
+--- a/hermes_cli/timeouts.py
++++ b/hermes_cli/timeouts.py
+@@ -40,7 +40,65 @@ def get_provider_stale_timeout(provider_id: str, model: str | None = None) -> fl
+     return _configured_timeout(provider_id, model, "stale_timeout_seconds", "stale_timeout_seconds")
+ 
+ 
+-def _get_model_config(provider_config: dict[str, object], model: str | None) -> dict[str, object] | None:
++
++def _coerce_positive_int(raw: object) -> int | None:
++    if isinstance(raw, bool):
++        return None
++    try:
++        value = int(raw)  # type: ignore[arg-type]
++    except (TypeError, ValueError):
++        return None
++    if value <= 0:
++        return None
++    return value
++
++
++def get_provider_max_output_tokens(
++    provider_id: str, model: str | None = None
++) -> int | None:
++    """Return a configured per-provider/model output-token cap, if any.
++
++    Resolution mirrors ``get_provider_request_timeout``: a per-model
++    ``max_output_tokens`` (or ``max_tokens``) under
++    ``providers.<id>.models.<model>`` wins, then a provider-level
++    ``max_output_tokens`` (or ``max_tokens``) fallback. Returns ``None``
++    when nothing valid is configured so callers can leave the value
++    untouched.
++    """
++    if not provider_id:
++        return None
++
++    try:
++        from hermes_cli.config import load_config_readonly
++        config = load_config_readonly()
++    except Exception:
++        return None
++
++    providers = config.get("providers", {}) if isinstance(config, dict) else {}
++    provider_config = (
++        providers.get(provider_id, {}) if isinstance(providers, dict) else {}
++    )
++    if not isinstance(provider_config, dict):
++        return None
++
++    model_config = _get_model_config(provider_config, model)
++    if model_config is not None:
++        for _k in ("max_output_tokens", "max_tokens"):
++            cap = _coerce_positive_int(model_config.get(_k))
++            if cap is not None:
++                return cap
++
++    for _k in ("max_output_tokens", "max_tokens"):
++        cap = _coerce_positive_int(provider_config.get(_k))
++        if cap is not None:
++            return cap
++
++    return None
++
++
++def _get_model_config(
++    provider_config: dict[str, object], model: str | None
++) -> dict[str, object] | None:
+     if not model:
+         return None
+     models = provider_config.get("models", {})
+-- 
+2.54.0 (Apple Git-157)
+
