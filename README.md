@@ -472,7 +472,27 @@ ZOLANDER_ROOT=~/zolander bash bootstrap.sh   # where to install (default ~/zolan
 bash toolkit/fetch_skills.sh             # pull the skills from their own sources (no forks)
 ```
 
-### Linux note (systemd `--user`)
+### Verify the install (go / no-go)
+
+After `bootstrap.sh`, prove the stack is actually live — don't trust a clean exit code.
+Three checks, each exits non-zero and says what's wrong if it fails:
+
+```
+"$VENV"/bin/python toolkit/yar_test.py      # embedder: loads the model, checks the
+                                            #   129-D Lorentz output and that a SK
+                                            #   sentence lands nearer its PL/EN
+                                            #   paraphrase than an unrelated one
+"$VENV"/bin/python toolkit/smoke_mem.py     # full path: embed -> HyperspaceDB insert
+                                            #   -> recall (writes 4 memories, runs 2
+                                            #   recalls, asserts they come back)
+"$VENV"/bin/python toolkit/reality_check.py # if present: ports listening, daemons up
+```
+
+`yar_test.py` is the single best smoke test: if it prints `✅ ... FUNGUJE` the embedder,
+the model download, and the Lorentz geometry are all real on this box. `smoke_mem.py`
+then proves the memory round-trip against a running HyperspaceDB on `:50051`. If either
+exits non-zero, fix that before wiring an LLM — a dead embedder means a dead recall and
+the whole honesty loop degrades silently.
 
 The timers are installed as **systemd user units** under `~/.config/systemd/user/`
 (`zolander-loop.timer`, `-watchdog`, `-dream`, `-brief`). User timers only run while
