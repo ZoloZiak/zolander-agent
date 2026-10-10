@@ -72,10 +72,10 @@ STOPWORDS = {
 # popisy skillov su casto po anglicky). Kazdy zaznam: regex -> (skill, vaha).
 # Vaha 4-6 = silny signal (pridava sa k skore skillu). Rozsiruj podla potreby.
 BOOST = [
-    # --- lokalny AI stack ---
+    # --- lokalny AI stack (__USER__) ---
     (r"\b(palantir|agy|bridge|fallback|embed\w*|vektor\w*|vector\w*|"
      r"hyperspace\w*|orbstack|vmlx|mlx|gpu\s*embed\w*|ssl|proxy|"
-     r"cert\w*|rate.?limit|local.?llm|lokaln\w*\s*llm)\b",
+     r"corp|cert\w*|rate.?limit|local.?llm|lokaln\w*\s*llm)\b",
      "ziak-local-ai-stack", 5),
     # --- Hermes shell hooky ---
     (r"\b(hook|hooky|hookov|pre_llm|pre_verify|pre_tool|shell.?hook|"

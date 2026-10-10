@@ -7,7 +7,7 @@ skonci. Robustne (ziaden zaseknuty loop), durable (prezije restart Macu).
 ## Co tick robi (zolander_loop.py)
 1. integrity check (ak identita zmenena -> zaloguj a skonci)
 2. heartbeat -> state/heartbeat.txt
-3. sken dovolenych git projektov (zolander-data, turiec-pod-lupou) -> nezacomitovane
+3. sken dovolenych git projektov (zolo2.0, turiec-pod-lupou) -> nezacomitovane
    zmeny zapise do denniky/<datum>.md
 4. zapis do logs/loop.log
 ZAMERNE bez LLM volani (lacne). LLM obohacovanie pride vo F4 "sen".
@@ -18,15 +18,6 @@ ZAMERNE bez LLM volani (lacne). LLM obohacovanie pride vo F4 "sen".
 - stav:         launchctl print gui/501/pl.zolander.loop
 - vynut tick:   launchctl kickstart -k gui/501/pl.zolander.loop
 - po zmene plistu: bootout potom bootstrap (reload)
-
-## Nocny sen (F4) — pl.zolander.dream
-zolander_dream.py, launchd StartCalendarInterval Hour=3 Minute=0 (raz denne, RunAtLoad=false).
-Fazy: salience decay -> LLM (gpt-mini) destilat dnesnych L0 epizod do noveho L1
-semantic konceptu -> ranny brief (denniky/brief_<datum>.md). READ-ONLY voci DB:
-NIC nemaze, forget-kandidatov len navrhne (P2/P3 — destrukcia az po tvojom audite).
-- start:  launchctl bootstrap gui/501 ~/Library/LaunchAgents/pl.zolander.dream.plist
-- test:   launchctl kickstart -k gui/501/pl.zolander.dream   (vynuti sen hned)
-- log:    logs/dream.log ; brief: denniky/brief_<datum>.md
 
 ## Kontrola ze zije
 - tail state/heartbeat.txt  (ts + pid posledneho ticku)

@@ -30,6 +30,7 @@ smerom k BLOKU pri NEZVRATNYCH operaciach; agent dostane dovod a spravi to inak
 FAIL-OPEN na CHYBE PARSOVANIA: ak stdin nie je co cakame, prepustime (hook
 nesmie zhodit agenta). ALE ked prikaz ROZPOZNAME ako zly -> tvrdy blok.
 """
+import os
 import sys
 import json
 import re

@@ -28,6 +28,7 @@ LOOPLOG = os.path.join(LOGS, "loop.log")
 NOTIFY = os.path.join(ROOT, "toolkit", "zolander_notify.py")
 INTEGRITY = os.path.join(ROOT, "toolkit", "integrity.py")
 MASTERPLAN_CHECK = os.path.join(ROOT, "toolkit", "masterplan_check.py")
+REALITY_AUDIT = os.path.join(ROOT, "toolkit", "reality_audit.py")
 PYBIN = "/usr/bin/python3"
 
 
@@ -194,6 +195,35 @@ def masterplan_summary():
         return None
 
 
+def reality_audit_summary():
+    """Spusti reality_audit (--json) a vrati odrazky LEN pri FAIL/warn drifte.
+    Straznik driftu docs/SOUL/skill voci realite — analogicky k masterplan_summary.
+    Fail-open: ak skript chyba/zlyha, vrati None (brief kvoli tomu nespadne).
+    Ticho (None) ked je vsetko OK — brief nezaplavujeme 25 zelenymi riadkami."""
+    if not os.path.exists(REALITY_AUDIT):
+        return None
+    try:
+        import json
+        p = subprocess.run([PYBIN, REALITY_AUDIT, "--json"],
+                           capture_output=True, text=True, timeout=120, cwd=ROOT)
+        out = (p.stdout or "").strip()
+        if not out:
+            return None
+        data = json.loads(out)
+        fails = [c for c in data.get("checks", []) if c["status"] == "FAIL"]
+        warns = [c for c in data.get("checks", []) if c["status"] == "WARN"]
+        if not fails and not warns:
+            return None  # vsetko sedi -> ticho
+        lines = []
+        for c in fails:
+            lines.append(f"- [DRIFT] {c['msg']}")
+        for c in warns[:4]:
+            lines.append(f"- [warn] {c['msg']}")
+        return lines or None
+    except Exception:
+        return None
+
+
 def build_message():
     parts = ["Zolander ranny brief"]
 
@@ -244,6 +274,12 @@ def build_message():
     if mp:
         parts.append("- masterplan:")
         parts.extend("  " + x for x in mp)
+
+    # realita-audit: drift docs/SOUL/skill voci realite (ticho ked OK)
+    ra = reality_audit_summary()
+    if ra:
+        parts.append("- realita-audit (drift dokumentacie voci stacku):")
+        parts.extend("  " + x for x in ra)
 
     return "\n".join(parts)
 

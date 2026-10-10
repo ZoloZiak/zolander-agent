@@ -1,72 +1,57 @@
 #!/usr/bin/env python3
-"""recall_health.py — ONE place for recall fail-handling.
+"""recall_health.py — JEDNO miesto pre fail-handling recallu.
 
-Problem it solves: recall fail-handling used to be scattered across cmd_recall with
-THREE different policies — embed with no guard (hard crash), YAR search fail-CLOSED,
-BM25/Gemma/rerank fail-OPEN SILENTLY. Result: when the embedding daemon died, recall
-kept running on 2 branches and said NOTHING — so you wouldn't notice a lens was dead
-for weeks. That scatter was a real hole.
+PROBLEM ktory riesi (veducko, 2026-10-01): fail-handling bol rozsypany na 5 miestach
+v cmd_recall s TROMI roznymi politikami — embed_one BEZ ochrany (tvrdy crash), YAR search
+fail-CLOSED, BM25/Gemma/rerank fail-OPEN TICHO. Dosledok: ked Gemma daemon spadol, recall
+bezal dalej na 2 vetvach a NIKDE ani slovo — presne preto sme tyzdne nevedeli ze Gemma
+kolekcia je rozbita. Tato rozsypanost bola skutocna diera.
 
-Solution: cmd_recall just COLLECTS failures into one `degraded` dict (lens -> reason)
-and calls report() at the end. This is the single place that decides what to do:
-  1. SELF-HEAL: a lens backed by a service gets kicked (throttled). Cross-platform:
-     systemctl --user on Linux, launchctl kickstart on macOS. No service manager
-     (plain docker/manual run) -> self-heal is skipped, notify still fires.
-  2. NOTIFY: throttled heads-up via zolander_notify (inbox + desktop + push).
-  3. LLM INFO: returns a human-readable summary cmd_recall injects into the output so
-     the session-start recall shows the model that memory is degraded — never hides it.
+RIESENIE: cmd_recall uz len ZBIERA zlyhania do jedneho `degraded` zoznamu (lens -> dovod)
+a NA KONCI zavola report(). Tu je JEDINE miesto kde sa rozhoduje co s degradaciou:
+  1. SELF-HEAL: daemon ktory ma launchd label sa skusi kickstartnut (throttled).
+  2. NOTIFY: throttled upozornenie cez zolander_notify (inbox + desktop + push).
+  3. LLM INFORMOVANIE: vrati human-readable summary, ktory cmd_recall vlozi do vystupu
+     (dict wrapper) nech ho session-start recall ukaze modelu — NEtaji degradaciu.
 
-THROTTLE: state/recall_health_ledger.json holds last notify+heal time per lens. Notify
-once per NOTIFY_COOLDOWN_S, heal once per HEAL_COOLDOWN_S — else every recall (Gemma down
-= every one) would spam. Fail-open: this whole layer is best-effort, it NEVER kills recall.
+THROTTLE: state/recall_health_ledger.json drzi posledny notify+heal cas per lens. Notify
+raz za NOTIFY_COOLDOWN_S, heal raz za HEAL_COOLDOWN_S — inak by kazdy recall (Gemma dole =
+kazdy) spamoval banner a bil launchd. Fail-open: cela tato vrstva je best-effort, NIKDY
+nezhodi recall (chyba v healtli nesmie zabit pamat).
 """
 import os
-import sys
 import json
 import time
-import platform
 import subprocess
 
 HOME = os.path.expanduser("~")
 try:
     from zol_paths import ZROOT
 except Exception:
-    ZROOT = os.environ.get("ZOLANDER_ROOT", os.path.join(HOME, "zolander"))
+    ZROOT = os.path.join(HOME, "projects", "zolander")
 STATE = os.path.join(ZROOT, "state")
 LEDGER = os.path.join(STATE, "recall_health_ledger.json")
 NOTIFY = os.path.join(ZROOT, "toolkit", "zolander_notify.py")
-SYS_PY = sys.executable or "python3"
+SYS_PY = "/usr/bin/python3"
 
-IS_MAC = platform.system() == "Darwin"
+NOTIFY_COOLDOWN_S = 1800   # 30 min — ten isty problem upozorni max 1x/30min
+HEAL_COOLDOWN_S = 300      # 5 min — kickstart daemona max 1x/5min (nebi launchd)
 
-NOTIFY_COOLDOWN_S = 1800   # 30 min — same problem alerts at most 1x/30min
-HEAL_COOLDOWN_S = 300      # 5 min — restart a service at most 1x/5min
-
-# lens key -> service identifier for self-heal (only lenses that ARE a restartable
-# service). yar_embed = in-process (not a service), bm25 = a file -> notify only.
-# macOS values are launchd labels; Linux values are systemd --user unit names.
-# A HyperspaceDB running as a plain `docker run` container is restarted by name too.
-SELF_HEAL_MAC = {
-    "db":    "pl.zolander.hyperspace",   # YAR + Gemma search both go via :50051
-    "gemma": "pl.zolander.gemmaembed",   # EmbeddingGemma embed daemon :8901
+# lens kluc -> launchd label (len tie co SU daemon a daju sa restartnut).
+# yar_embed = v procese (nie daemon), bm25 = subor -> self-heal sa nedа, len notify.
+SELF_HEAL = {
+    "db": "pl.zolander.hyperspace",       # YAR search + Gemma search obe idu cez :50051
+    "gemma": "pl.zolander.gemmaembed",    # EmbeddingGemma embed daemon :8901
 }
-SELF_HEAL_LINUX = {
-    "db":    "zolander-hyperspace.service",
-    "gemma": "zolander-gemmaembed.service",
-}
-SELF_HEAL = SELF_HEAL_MAC if IS_MAC else SELF_HEAL_LINUX
 
-# docker container name to restart if the service manager has no unit for it (the
-# bootstrap default runs HyperspaceDB as a container called "hyperspace").
-DOCKER_FALLBACK = {"db": os.environ.get("HS_CONTAINER", "hyperspace")}
-
+# human-citatelny popis kazdej vetvy pre LLM summary
 LENS_DESC = {
-    "yar_embed":  "YAR embed (query not vectorized — semantic branch dead)",
+    "yar_embed": "YAR embed (query sa nevektorizoval — semantic vetva mrtva)",
     "yar_search": "YAR/HyperspaceDB search (:50051)",
-    "db":         "HyperspaceDB (:50051)",
-    "bm25":       "BM25 lexical layer (mem_index.jsonl)",
-    "gemma":      "EmbeddingGemma 3rd lens (daemon :8901)",
-    "rerank":     "LLM re-rank (ordering only, not retrieval)",
+    "db": "HyperspaceDB (:50051)",
+    "bm25": "BM25 lexikalna vrstva (mem_index.jsonl)",
+    "gemma": "EmbeddingGemma 3. lens (daemon :8901)",
+    "rerank": "Opus re-rank (len poradie, nie retrieval)",
 }
 
 
@@ -89,34 +74,17 @@ def _save_ledger(d):
         pass
 
 
-def _kickstart(lens):
-    """Restart the service backing `lens`. Cross-platform, best-effort.
-    True if a restart command ran successfully."""
-    ident = SELF_HEAL.get(lens)
+def _kickstart(label):
+    """launchctl kickstart -k gui/<uid>/<label>. True ak prikaz zbehol (rc 0)."""
     try:
-        if ident and IS_MAC:
-            uid = os.getuid()
-            p = subprocess.run(
-                ["/bin/launchctl", "kickstart", "-k", f"gui/{uid}/{ident}"],
-                capture_output=True, text=True, timeout=15)
-            if p.returncode == 0:
-                return True
-        elif ident:
-            # systemd --user first
-            p = subprocess.run(
-                ["systemctl", "--user", "restart", ident],
-                capture_output=True, text=True, timeout=20)
-            if p.returncode == 0:
-                return True
-        # fallback: a plain docker container (same on both OSes)
-        cont = DOCKER_FALLBACK.get(lens)
-        if cont:
-            p = subprocess.run(["docker", "restart", cont],
-                               capture_output=True, text=True, timeout=30)
-            return p.returncode == 0
+        uid = os.getuid()
+        p = subprocess.run(
+            ["/bin/launchctl", "kickstart", "-k", f"gui/{uid}/{label}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        return p.returncode == 0
     except Exception:
         return False
-    return False
 
 
 def _notify(subject, body):
@@ -129,9 +97,9 @@ def _notify(subject, body):
 
 
 def report(degraded, source="adhoc", backend_down=False):
-    """degraded: dict {lens: reason} or list[lens]. Return a human-readable summary
-    string for the LLM (or "" when nothing). Side-effects (heal+notify) are throttled.
-    Fail-open: any error here -> return at least the summary, NEVER raise."""
+    """degraded: dict {lens: dovod} alebo list[lens]. Vrat human-readable summary
+    string pre LLM (alebo "" ked nic). Side-effecty (heal+notify) su throttled.
+    Fail-open: akakolvek chyba tu -> vrat aspon summary, NIKDY neraise."""
     if not degraded:
         return ""
     if isinstance(degraded, (list, tuple, set)):
@@ -145,40 +113,41 @@ def report(degraded, source="adhoc", backend_down=False):
 
     healed, notified_lenses = [], []
     for lens in degraded:
-        # 1) SELF-HEAL (throttled) — only lenses backed by a service
-        if lens in SELF_HEAL or lens in DOCKER_FALLBACK:
+        # 1) SELF-HEAL (throttled) — len daemony s labelom
+        label = SELF_HEAL.get(lens)
+        if label:
             last_heal = ledger.get(f"heal:{lens}", 0)
             if now - last_heal > HEAL_COOLDOWN_S:
-                if _kickstart(lens):
+                if _kickstart(label):
                     healed.append(lens)
                 ledger[f"heal:{lens}"] = now
 
-        # 2) decide whether to NOTIFY (throttled per lens)
+        # 2) rozhodni ci NOTIFY (throttled per lens)
         last_notif = ledger.get(f"notify:{lens}", 0)
         if now - last_notif > NOTIFY_COOLDOWN_S:
             notified_lenses.append(lens)
             ledger[f"notify:{lens}"] = now
 
-    # 3) one notification for all NEW degraded branches
+    # 3) jedna notifikacia za vsetky NOVE degradovane vetvy (dedup cez throttle)
     if notified_lenses:
-        lines = ["Recall is DEGRADED — a memory layer dropped out:"]
+        lines = ["Recall je DEGRADOVANY — vypadla vrstva pamate:"]
         for lens in notified_lenses:
             d = degraded.get(lens) or ""
             lines.append(f"- {LENS_DESC.get(lens, lens)}" + (f": {d}" if d else ""))
         if healed:
-            lines.append(f"(self-heal: tried to restart {', '.join(healed)})")
+            lines.append(f"(self-heal: skusil som restartnut {', '.join(healed)})")
         if backend_down:
-            lines.append("WARNING: ALL retrieval branches down — recall returns empty, not degraded.")
+            lines.append("POZOR: VSETKY retrieval vetvy dole — recall vracia prazdno, nie degradovane.")
         _notify("recall DEGRADED", "\n".join(lines))
 
     _save_ledger(ledger)
 
-    # 4) summary for the LLM (ALWAYS, even if notify throttled — the model must know NOW)
+    # 4) summary pre LLM (VZDY, aj ked notify throttled — model ma vediet TERAZ)
     parts = [str(LENS_DESC.get(l, l)) for l in degraded]
     if backend_down:
-        return ("MEMORY PARTLY UNAVAILABLE — ALL retrieval branches down (" +
-                ", ".join(parts) + "). Recall is empty, NOT 'no memories'. "
-                "Check the DB/daemons; I tried self-heal + sent a notification.")
-    return ("RECALL DEGRADED — dropped layer: " + ", ".join(parts) +
-            ". Results are INCOMPLETE (running on the remaining branches). Self-heal "
-            "+ notification sent. If expected memories are missing, this may be why.")
+        return ("PAMAT CASTOCNE NEDOSTUPNA — VSETKY retrieval vetvy dole (" +
+                ", ".join(parts) + "). Recall je prazdny, NIE 'ziadne spomienky'. "
+                "Over DB/daemony; ja som skusil self-heal + poslal notifikaciu.")
+    return ("RECALL DEGRADOVANY — vypadla vrstva: " + ", ".join(parts) +
+            ". Vysledky su NEUPLNE (bezim na zvysnych vetvach). Self-heal + notifikacia "
+            "odoslane. Ak chybaju ocakavane spomienky, moze to byt tym.")

@@ -36,7 +36,7 @@ import json
 
 # Default zakazane vzory pre sanitizaciu verejneho repa (zol_paths pravidlo).
 # Realne cesty/uzivatelske meno NIKDY nesmu unikat do verejneho ZoloZiak repa.
-_SANIT_DEFAULT = [r"/Users/__USER__", r"__USER__\.z", r"__USER__"]
+_SANIT_DEFAULT = [r"/Users/ziak", r"ziak\.z", r"__USER__"]
 
 # Aliasy typov (druhy generator pouzival ine mena; drzime spatnu kompatibilitu).
 _ALIASES = {"book": "chapter", "skill": "skill-edit"}

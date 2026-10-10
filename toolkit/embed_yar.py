@@ -20,27 +20,14 @@ Prostredie (overené PLAN §14):
 """
 import os, sys, json, time
 
-# Model resolution (cross-platform):
-#   - If a local copy exists (default ~/models/yar_v5_embedding, or $YAR_MODEL),
-#     use it OFFLINE — no network, deterministic, what the author's box does.
-#   - Otherwise fall back to the public HF repo id and allow a one-time download
-#     (Apache-2.0, ~1.2 GB). `trust_remote_code` is required: the model ships a
-#     custom Qwer2+LorentzMRLHead forward (modeling_yar.py) that returns the 129D
-#     Lorentz vector directly via target_dim=.
-_LOCAL = os.environ.get("YAR_MODEL", os.path.expanduser("~/models/yar_v5_embedding"))
-if os.path.isdir(_LOCAL):
-    MODEL_ID = _LOCAL
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-else:
-    # not downloaded yet -> let transformers pull it from the Hub on first load
-    MODEL_ID = os.environ.get("YAR_HF_REPO", "YARlabs/v5_Embedding_0.5B")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-
 
 import torch
 from transformers import AutoTokenizer, AutoModel
 
+MODEL_ID = os.environ.get("YAR_MODEL", os.path.expanduser("~/models/yar_v5_embedding"))
 TARGET_DIM = int(os.environ.get("YAR_TARGET_DIM", "128"))  # -> 129D Lorentz
 BATCH = int(os.environ.get("YAR_BATCH", "16"))
 DEVICE = "cpu"  # MPS bf16 matmul bug; 0.5B na CPU je dostatočne rýchle
@@ -114,15 +101,6 @@ def lorentz_dist(a, b):
 
 
 def main():
-    # `warm`: load the model (forcing a HF download if not cached) and exit.
-    # Used by bootstrap to pre-fetch the weights so the first recall isn't a stall.
-    if len(sys.argv) > 1 and sys.argv[1] == "warm":
-        t0 = time.time()
-        get_model()
-        v = embed_one("warmup")
-        print(f"[embed_yar] model ready ({MODEL_ID}) dim={len(v)} "
-              f"in {time.time()-t0:.1f}s", file=sys.stderr)
-        return
     items = []
     for line in sys.stdin:
         line = line.strip()

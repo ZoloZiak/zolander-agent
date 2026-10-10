@@ -23,8 +23,7 @@ CLI:
 import os, sys, json, time, glob, subprocess
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-_ZROOT = os.environ.get("ZOLANDER_ROOT") or os.path.dirname(ROOT)
-MP_DIR = os.path.join(os.path.expanduser(_ZROOT), "state", "masterplan")
+MP_DIR = os.path.expanduser("~/projects/zolander/state/masterplan")
 LIFE = os.path.join(MP_DIR, "life.json")
 DASH = os.path.join(MP_DIR, "dashboard.html")
 STATE = os.path.join(MP_DIR, "autocheck_state.json")  # audit stopa zmien

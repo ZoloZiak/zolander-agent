@@ -63,6 +63,7 @@ def last_run():
 def run_eval():
     """Spusti mem_eval.py, vytiahni MRR hybrid W=1.3 z vystupu. None ak zlyha."""
     env = dict(os.environ)
+    if os.path.exists(CA):
     try:
         p = subprocess.run([VPY, os.path.join(TOOLKIT, "mem_eval.py")],
                            capture_output=True, text=True, timeout=600, env=env)
