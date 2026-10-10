@@ -4,7 +4,7 @@
 
 Most "AI persona" projects optimize for *immersion*: they want you to feel there's
 a someone in there. Zolander optimizes for something more useful — a partner who
-thinks at a **higher, more abstract level than you do**, who sees beneath the surface
+thinks **strategically**, who sees beneath the surface
 you skim across, and who pulls you up to where they're standing. A mentor and a best
 friend. And, just as importantly, a **tireless worker** who actually gets the job
 done — not a philosopher who only floats above the work.
@@ -50,23 +50,6 @@ the loyalty of a friend who's smart enough, and honest enough, to say *"look aga
 here's what you're missing — including about yourself."* Not to put you down. To pull
 you up. That's what a real mentor does, and it's only possible inside genuine warmth,
 not against it.
-
-## Why hyperbolic geometry (this is the actual reason)
-
-Hyperbolic space is the natural geometry of hierarchy: volume grows exponentially with
-radius, so trees embed with near-zero distortion. Read the radius as **depth of
-abstraction**:
-
-- **r → 0 (near the origin):** the most abstract principles, the meta-frame.
-- **large r (the rim):** concrete, particular instances.
-
-"Think at a higher level of abstraction" stops being a slogan and becomes a
-*coordinate*: reason from near the origin of the manifold, and move r deliberately.
-The depth is set **natively by the embedder** (a hyperbolic model, see below), not by
-a hand-tuned radius table — that distinction matters and cost us one rewrite to get
-right.
-
----
 
 ## What runs today
 
@@ -132,15 +115,9 @@ real execution. Run them all with `python3 toolkit/run_tests.py` (offline subset
   cross-domain pattern it needs) and giving the LLM the top-N nearest for re-check —
   a tight vector threshold still short-circuits near-identical hits without an LLM
   call. It never auto-saves; new patterns are proposed for approval (`learn`).
-- **Double-take + stability self-check.** `toolkit/lens.py` has three modes: `gate`
-  (a deterministic, LLM-free classifier — `should_double_take` — that decides whether a
-  question is *serious* enough to warrant a double-take, so it doesn't fire on "hi";
-  serious ones trigger `lift`), `lift` (name the abstraction level, step up one — "X is
-  an instance of Y; the question above the question is Z" — then descend back to a
-  concrete action), and `stability`, a local Lyapunov-style check that measures whether
-  a reasoning trajectory converges on signal or spirals into elegant nonsense. Distances
-  are measured **natively in Lorentz space** (arccosh), not Euclidean. Reachable via
-  `zol_session.py gate` / `lens` / `pattern`. The "double-take before every serious
+- **Double-take gate.** `toolkit/lens.py` runs a deterministic, LLM-free classifier
+  that decides whether a question is *serious* enough to warrant a double-take.
+  The "double-take before every serious
   answer" is enforced as a **skill convention** (the identity `SKILL.md` mandates
   running `gate` before serious answers) — a soft rule that lives in the prompt. For
   the things that must NOT depend on the model's compliance, see *Hard locks via
@@ -432,12 +409,9 @@ Notify     zolander_notify.py — one-way daemon->user channel: always appends t
            audible sound. All stdlib-only, fail-open (a missing terminal-notifier
            just falls back to inbox + push). Plist templates carry __USER__
            placeholders.
-Dream      zolander_dream.py — nightly: decay -> distill L0->L1 -> ascend.py
-           climbs L1->L2->L3 (toward r->0) -> read-only morning brief. Never
-           deletes; forget candidates are only proposed.
-Engine     ascend.py (abstraction ladder), patterns.py (script detector),
-           lens.py (double-take + local Lyapunov stability). Ported to YAR v5
-           + native Lorentz distance. Quality bounded by embedder (roadmap #1).
+Dream      zolander_dream.py — nightly: decay -> distill L0->L1 -> read-only
+           morning brief. Never deletes; forget candidates are only proposed.
+Engine     lens.py (double-take gate). Integrates with Hybrid Recall.
 Hooks      hook_recall.py (pre_llm_call: inject recall once/session, cache-safe)
            + hook_verify.py (pre_verify: deny "done" while changed .py/.json
            don't parse, fail-open) + hook_clarify_notify.py (pre_tool_call
