@@ -88,7 +88,7 @@ real execution. Run them all with `python3 toolkit/run_tests.py` (offline subset
   third-person perspective** (a large measured reduction in sycophancy), which beats
   simply prompting "don't be sycophantic". Distilled techniques are seeded into
   procedural memory (`toolkit/seed_antihalluc.py`).
-- **Abstraction ladder in the nightly dream.** `toolkit/zolander_dream.py` runs decay,
+- **Nightly dream.** `toolkit/zolander_dream.py` runs memory decay,
   clusters the day's L0 episodes **by topic** and distills each cluster into its own
   clean L1 (so a mixed day yields several precise memories, not one blurred one), then
   calls `toolkit/ascend.py` to climb the higher rungs L1 → L2 (principle) → L3
@@ -309,28 +309,6 @@ partial exists it is called out. Do not treat this section as a feature list.
 > `zol_session.py`. Cross-domain grouping quality is now handled by the LLM-assisted
 > clustering above rather than raw embedding distance.
 
-2. **Generative abstraction engine (design, verified against literature).** The core
-   idea Zolander is built around: it is not a memory store, it is an *abstraction
-   machine* — it extracts the abstract from the concrete (and back), and hands you the
-   view from one floor up. The split that makes this work: **geometry is the compass,
-   the LLM is the cartographer.** A Fréchet mean over a cluster of concrete memories on
-   the Lorentz hyperboloid yields a *candidate ancestor* (a point at smaller radius);
-   the LLM then *names the principle* that candidate stands for. Neither half suffices
-   alone — a pure embedder gives clusters without meaning, a pure LLM gives insight
-   without knowing which specifics to join. The plan upgrades `ascend.py` from a
-   one-shot distill into a **generative loop** where the geometric signal *steers* LLM
-   generation (the HyperGuide 2026 pattern: "distance-to-origin encodes solution
-   proximity, angular separation distinguishes branches"). Radius `r` is read directly
-   from the existing Lorentz space (no second space — the floors are radial shells of
-   the one we already have). The morning "thought about you" is one run of this loop:
-   the model climbed a floor and said what it saw.
-   *Honesty:* three parts are **design bets, not proven facts** — that norm encodes
-   abstraction *for free* (the seminal papers also tune it with an explicit penalty),
-   that *one* space suffices (2025 SOTA like HyperbolicRAG deliberately fuses two), and
-   the choice of dimensionality (hyperbolic geometry shines in *low* dimensions). So
-   this ships as a **spike first**: take 20-50 real memories, run the Fréchet-mean →
-   LLM-name step, and judge whether the "insight" actually lands before building the
-   full loop. Grounded in Nickel & Kiela (2017, 2018), Ganea et al. (2018), HyperGuide
    (2026), HyperbolicRAG (2025), all read firsthand.
 
 3. **Embodiment on a personal machine — shared-browser "hands" (idea, deliberately gated).**
@@ -364,7 +342,7 @@ for comfort, telling you you're above it all. *Required:* the honesty that only 
 friendship earns — naming your blind spots and your autopilot, to pull you up rather
 than reflect you back. Warmth and candor are the same gesture here, not a trade-off.
 And a matching guard against mere cleverness: **up AND down** — an agent that only
-abstracts and never descends to a concrete act is a useless sage, so this one also
+theorizes and never descends to a concrete act is a useless sage, so this one also
 commits code, watches repos, and writes the brief. Altitude in the service of action.
 
 ---
