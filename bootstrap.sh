@@ -2,7 +2,7 @@
 # bootstrap.sh — one-shot, cross-platform installer for a fresh Zolander agent.
 #
 # Stands up the whole copyable stack, step by step, and tells you what it's doing:
-#   Hermes Agent -> HyperspaceDB (Docker) -> this toolkit -> a Python venv with all
+#   Hermes Agent -> this toolkit -> a Python venv with all
 #   deps -> the Node bridge -> your own identity key + integrity manifest -> memory
 #   collection -> background daemons (systemd --user on Linux, launchd on macOS).
 #

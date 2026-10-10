@@ -412,7 +412,7 @@ Guard      zol_guard.py — deterministic anti-hallucination / anti-sycophancy
            gate (scan-text / scan-input / verify-*). LLM-free, exit 0/1.
 Session    zol_session.py — start (recall-first) + koniec (guard + decay)
            + lens (double-take) + pattern (script detector) entry points.
-Bridge     hs.mjs — thin Node CLI over the HyperspaceDB SDK.
+
 Loop       zolander_loop.py — one-shot tick (~20 min, via systemd timer on
            Linux / launchd on macOS): integrity (fail-closed) -> heartbeat
            -> git scan -> diary. No LLM.
