@@ -20,7 +20,7 @@ import sys
 import json
 import argparse
 
-sys.path.insert(0, "/Users/__USER__/projects/zolo2.0/toolkit")
+sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 from palantir_client import chat  # noqa: E402
 

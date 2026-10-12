@@ -19,6 +19,7 @@ Kontrakt: cita JSON event zo stdin, na blok vrati {"action":"block","message":..
 FAIL-OPEN: akakolvek chyba -> exit 0 prazdny stdout (nikdy nezhodi agenta).
 """
 import json
+import os
 import re
 import sys
 
@@ -86,7 +87,7 @@ def main():
                           f"TOTO je presne chyba z 2026-09-01.")
 
         if reason:
-            guard = "/Users/__USER__/.hermes/state/env-guard/env_guard.py"
+            guard = os.path.expanduser("~/.hermes/state/env-guard/env_guard.py")
             msg = (
                 f"⛔ ZABLOKOVANE (env-guard hook): {reason}\n\n"
                 f"Pouzi BEZPECNU cestu — nikdy neprepisuj .env cely:\n"

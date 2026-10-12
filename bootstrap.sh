@@ -57,10 +57,7 @@ have git  || die "git is required"
 have python3 || die "python3 is required (3.10+)"
 have node || warn "node not found — the memory bridge needs it. Install Node 18+ and re-run."
 have npm  || warn "npm not found — needed to install the HyperspaceDB SDK."
-if ! have docker; then
-  warn "docker not found — HyperspaceDB runs in a container. Install Docker (Linux) or"
-  warn "  Docker Desktop/OrbStack (macOS), then re-run. Everything else still proceeds."
-fi
+have cargo || warn "cargo/Rust not found — needed to build the native HyperspaceDB binary (step 4). rustup installs it automatically, or set ZOLANDER_HS_DOCKER=1 to use Docker instead."
 
 # --- 1. Hermes Agent --------------------------------------------------------
 say "1/9  Hermes Agent"
@@ -139,24 +136,24 @@ if [ "$SKIP_EMBED" != "1" ]; then
   fi
 fi
 
-# --- 4. HyperspaceDB (Docker OR native-on-metal) ----------------------------
+# --- 4. HyperspaceDB (native-on-metal by default, Docker opt-in) ------------
 say "4/9  HyperspaceDB (vector store) on :$HS_PORT"
 # Two ways to run it; they both bind :50051, so pick ONE:
-#   - default: Docker container (portable, zero build)
-#   - ZOLANDER_HS_NATIVE=1: compile the Rust source and run bare-metal (no Docker),
-#     the way the author's Mac runs it. Slower first setup, no container overhead.
-if [ "${ZOLANDER_HS_NATIVE:-0}" = "1" ]; then
+#   - DEFAULT: compile the Rust source and run bare-metal (no Docker), the way the
+#     author's Mac runs it under launchd. Native SIMD/NEON, no container overhead.
+#   - ZOLANDER_HS_DOCKER=1: run the prebuilt container instead (portable, zero build).
+if [ "${ZOLANDER_HS_DOCKER:-0}" != "1" ]; then
   NATIVE_SH=""
   for d in "$SELF_DIR" "$ROOT"; do
     [ -n "$d" ] && [ -f "$d/deploy/build_hyperspace_native.sh" ] && { NATIVE_SH="$d/deploy/build_hyperspace_native.sh"; break; }
   done
   if [ -n "$NATIVE_SH" ]; then
-    step "native build requested (ZOLANDER_HS_NATIVE=1) — compiling from Rust source"
-    bash "$NATIVE_SH" build || warn "native build failed — see output; fall back with Docker (unset ZOLANDER_HS_NATIVE)"
+    step "native build (default) — compiling HyperspaceDB from Rust source"
+    bash "$NATIVE_SH" build || warn "native build failed — see output; or use Docker with ZOLANDER_HS_DOCKER=1"
     step "built. Start it (foreground) with: bash $NATIVE_SH run"
-    step "  or wire it into systemd/launchd for 24/7 (see README). Not auto-started here."
+    step "  or wire it into launchd/systemd for 24/7 (see README). Not auto-started here."
   else
-    warn "ZOLANDER_HS_NATIVE=1 but deploy/build_hyperspace_native.sh not found — skipping"
+    warn "deploy/build_hyperspace_native.sh not found — skipping (or use ZOLANDER_HS_DOCKER=1)"
   fi
 elif have docker; then
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^hyperspace$'; then
@@ -170,8 +167,8 @@ elif have docker; then
       || warn "HyperspaceDB start failed — check 'docker logs hyperspace'"
   fi
 else
-  warn "docker missing — skipped. Either install Docker and re-run, or build native:"
-  warn "  ZOLANDER_HS_NATIVE=1 bash bootstrap.sh   (compiles the Rust source instead)"
+  warn "ZOLANDER_HS_DOCKER=1 set but docker missing — install Docker and re-run, or use the"
+  warn "  native default (unset ZOLANDER_HS_DOCKER): compiles the Rust source instead."
 fi
 
 # --- 5. Node bridge (HyperspaceDB SDK) --------------------------------------

@@ -26,7 +26,7 @@ STATE = os.path.join(ROOT, "state")
 NPZ = os.path.join(STATE, "gemma_all_nodes.npz")
 IDX = os.path.join(STATE, "mem_index.jsonl")
 OUT = os.path.join(STATE, "meld_proposals.jsonl")
-sys.path.insert(0, "/Users/__USER__/projects/zolo2.0/toolkit")
+sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
 LABS = ["opus", "gpt", "gemini"]

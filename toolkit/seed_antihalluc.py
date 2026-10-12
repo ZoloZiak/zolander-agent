@@ -2,8 +2,8 @@
 """seed_antihalluc.py — nasype destilovane anti-halucinacia/anti-sycophancy techniky
 do procedural pamate (YAR v5, zol_procedural). Zdroj: arXiv korpus 236 clankov,
 destilat overeny (40/40 ID realnych). Spustat cez .venv-yar python."""
-import sys, json, time
-sys.path.insert(0, "/Users/__USER__/projects/zolander/toolkit")
+import os, sys, json, time
+sys.path.insert(0, os.path.expanduser("~/projects/zolander/toolkit"))
 import zol_mem as zm
 
 # (text postupu, layer) — L1 destilat, L2 principy
