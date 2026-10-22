@@ -182,9 +182,19 @@ FORGET_SALIENCE = float(os.environ.get("ZOL_FORGET_SALIENCE", "0.12"))
 RETIRE_MIN_AGE_DAYS = float(os.environ.get("ZOL_RETIRE_MIN_AGE", "60"))
 RETIRE_SALIENCE = float(os.environ.get("ZOL_RETIRE_SALIENCE", "0.05"))
 
-# YAR embedder (natívny 129D Lorentz) — import z rovnakého toolkitu
+# YAR embedder (natívny 129D Lorentz) — import z rovnakého toolkitu.
+# Lazy/fail-open: embed_yar ťahá torch; ak chýba (napr. toolkit beh bez
+# embedder venvu), modul sa MUSÍ dať importovať aj tak. Chybu uložíme do
+# modulovej premennej — NIE do `except ... as e` (tá sa po bloku v Py3 maže
+# a closure by ju nenašla -> NameError pri prvom embed_one).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from embed_yar import embed_one  # noqa: E402
+try:
+    from embed_yar import embed_one  # noqa: E402
+except Exception as _e_yar:
+    _YAR_IMPORT_ERR = repr(_e_yar)
+
+    def embed_one(*args, **kwargs):
+        raise RuntimeError(f"YAR embedder nedostupny: {_YAR_IMPORT_ERR}")
 
 
 def col_for(kind=None):
@@ -704,7 +714,6 @@ def cmd_recall():
     # zhodu klucovych slov (deterministicky, bez modelu). RRF nepotrebuje ladit vahy
     # medzi nezrovnatelnymi skalami (Lorentz distance vs BM25 skore). Vypnutelne
     # obj["no_lexical"]=true alebo env ZOL_RECALL_LEXICAL=0.
-    vec = embed_one(query)
     fetch = topk * 4  # vytiahni sirsie, po zluceni + filtri orez na topk
     # FAIL-HANDLING ZJEDNOTENE (2026-10-01, veducko): vsetky vetvy zbieraju zlyhania
     # do JEDNEHO `degraded` dictu {lens: dovod}. Rozhodnutie co s nim (self-heal + notify

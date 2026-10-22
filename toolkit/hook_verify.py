@@ -156,18 +156,12 @@ def _moa_review(changed, cwd):
     if not os.environ.get("PALANTIR_TOKEN"):
         return ""  # bez tokenu netlac
 
-    # watchdog: cely MoA ohranicny SIGALRM (default 90s)
-    import signal
+    # watchdog: cely MoA ohranicny budget (default 90s). Cross-platform —
+    # SIGALRM je POSIX-only (na Windows neexistuje), preto strazime cez
+    # monotonny deadline kontrolovany medzi subormi.
+    import time as _time
     budget = int(float(os.environ.get("ZOL_VERIFY_MOA_BUDGET", "90")))
-
-    def _timeout(*_):
-        raise TimeoutError("MoA budget")
-
-    try:
-        signal.signal(signal.SIGALRM, _timeout)
-        signal.alarm(budget)
-    except Exception:
-        pass
+    _deadline = _time.monotonic() + budget
 
     problems = []
     try:
@@ -176,6 +170,8 @@ def _moa_review(changed, cwd):
         from zol_eval import evaluate
         threshold = float(os.environ.get("ZOL_VERIFY_MOA_THRESHOLD", "0.6"))
         for path, txt in files:
+            if _time.monotonic() >= _deadline:
+                break  # vyprsal budget -> fail-open na dovtedy najdenych
             zadanie = (f"Recenzuj zmeneny subor '{os.path.basename(path)}'. "
                        f"Ma byt korektny, cistou slovencinou (pri .md), bez AI-slop, "
                        f"bez lichotiek, bez zjavnych bugov/dier.")
@@ -196,11 +192,6 @@ def _moa_review(changed, cwd):
         return ""  # vyprsal budget -> fail-open
     except Exception:
         return ""  # akakolvek chyba -> fail-open
-    finally:
-        try:
-            signal.alarm(0)
-        except Exception:
-            pass
 
     if not problems:
         return ""
