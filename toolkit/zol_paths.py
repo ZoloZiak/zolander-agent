@@ -7,9 +7,10 @@ padne na default. Tak bezi identicky kod:
   - u autora (~/projects/zolander + ~/projects/zolo2.0),
   - u klonujuceho (~/zolander + repo-lokalny hs.mjs vedla tohto suboru).
 
-Import: `from zol_paths import HS, NODE, NODE_ENV, ZROOT, ZOLO2, here`.
+Import: `from zol_paths import HS, NODE, NODE_ENV, ZROOT, ZOLO2, SYS_PY, VPY, here`.
 """
 import os
+import sys
 import glob
 import shutil
 
@@ -66,10 +67,12 @@ def node_bin():
 
 
 def node_modules():
-    """Adresar s HyperspaceDB SDK. env NODE_PATH prebije; inak najde npx cache
-    co obsahuje hyperspace-sdk-ts (bootstrap ho instaluje cez npx)."""
+    """Adresar s HyperspaceDB SDK. env NODE_PATH prebije; inak hlada rozne lokacie."""
     if os.environ.get("NODE_PATH"):
         return os.environ["NODE_PATH"]
+    home_nm = os.path.join(HOME, "node_modules")
+    if os.path.isdir(os.path.join(home_nm, "hyperspace-sdk-ts")):
+        return home_nm
     for cand in glob.glob(os.path.join(HOME, ".npm", "_npx", "*", "node_modules")):
         if os.path.isdir(os.path.join(cand, "hyperspace-sdk-ts")) or glob.glob(
             os.path.join(cand, "*hyperspace*")
@@ -85,10 +88,28 @@ def node_env():
     return dict(os.environ, NODE_PATH=nm) if nm else dict(os.environ)
 
 
+def sys_python():
+    """Systemovy alebo behovy Python."""
+    return (
+        os.environ.get("ZOL_SYS_PY")
+        or shutil.which("python")
+        or shutil.which("python3")
+        or sys.executable
+    )
+
+
 def venv_python():
-    """Python z .venv-yar (torch+YAR embedder). env -> zolander_root/.venv-yar."""
-    return os.environ.get("ZOL_VENV_PY") or os.path.join(
-        zolander_root(), ".venv-yar", "bin", "python"
+    """Python z .venv-zolander alebo .venv-yar (torch+YAR embedder)."""
+    return os.environ.get("ZOL_VENV_PY") or _first_existing(
+        [
+            os.path.join(HOME, ".venv-zolander", "Scripts", "python.exe"),
+            os.path.join(HOME, ".venv-zolander", "bin", "python"),
+            os.path.join(zolander_root(), ".venv-yar", "Scripts", "python.exe"),
+            os.path.join(zolander_root(), ".venv-yar", "bin", "python"),
+            os.path.join(zolander_root(), ".venv", "Scripts", "python.exe"),
+            os.path.join(zolander_root(), ".venv", "bin", "python"),
+        ],
+        sys.executable,
     )
 
 
@@ -98,6 +119,8 @@ ZOLO2 = zolo2_root()
 HS = hs_mjs()
 NODE = node_bin()
 NODE_ENV = node_env()
+SYS_PY = sys_python()
+VPY = venv_python()
 STATE = os.path.join(ZROOT, "state")
 LOGS = os.path.join(ZROOT, "logs")
 
@@ -110,5 +133,6 @@ if __name__ == "__main__":
         "HS": HS, "HS_exists": os.path.exists(HS),
         "NODE": NODE, "NODE_exists": os.path.exists(NODE) or bool(shutil.which("node")),
         "NODE_PATH": NODE_ENV.get("NODE_PATH", ""),
+        "sys_python": sys_python(), "sys_py_exists": os.path.exists(sys_python()),
         "venv_python": venv_python(), "venv_exists": os.path.exists(venv_python()),
     }, indent=2, ensure_ascii=False))

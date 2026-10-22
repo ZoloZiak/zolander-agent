@@ -24,8 +24,10 @@ import subprocess
 import tempfile
 import hashlib
 
-SYS_PY = "/usr/bin/python3"
-ZOL_SESSION = os.path.expanduser("~/projects/zolander/toolkit/zol_session.py")
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from zol_paths import SYS_PY, VPY
+ZOL_SESSION = os.path.join(HERE, "zol_session.py")
 STAMP_DIR = os.path.join(tempfile.gettempdir(), "zol_recall_stamps")
 RECALL_TIMEOUT = 90  # s — YAR model load + recall
 
