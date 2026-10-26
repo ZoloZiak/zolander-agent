@@ -103,9 +103,12 @@
   *Green-check (2026-10-27):* sacrificial záznam (conf 0.05) → dry našiel
   1 kandidáta A+B → execute → A+B zmazané, audit podpísaný redočijaný,
   ďalší dry → 0 kandidátov, `verify` audit record OK.
-- **Mechanické bezpečie.** `permissions` v `.opencode/opencode.json`: shell `ask`
-  default, git read allow, `rm -rf` / `force-push` deny, external dir `ask`.
-  (Tvrdý zámok v configu, nie v prose.)
+- **Mechanické bezpečie.** `permissions` v `.opencode/opencode.json`:
+  tvrdo DENY: `git push --force*`, `*rm -rf *`, `*del /s *`, `*format *`.
+  Poznámka poctivosti (2026-10-26/27 nocnú session): opencode si počas
+  práce užívateľskými „always allow“ klikmi Moje prepísal shell/subagent/
+  external_directory na allow — config odrazy reálnu voľbu vedúca, nie
+  zlyhanie mechanizmu. Ďalšie hard deny tripky zostávajú.
 - **Daemony portované (loop/watchdog/dream) + Scheduled Tasks.** Port hermes
   launchd cronov na Windows (PowerShell `Register-ScheduledTask`, user-level;
   `schtasks` CLI je v tomto prostredí Access denied — obídené):
