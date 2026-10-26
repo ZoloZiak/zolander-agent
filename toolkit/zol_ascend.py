@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""zol_ascend.py — L0 -> L1 ascend (fáza 1 vrstiev).
+"""zol_ascend.py — vzostup vrstiev L0 -> L1 -> L2 (fáza vrstiev).
 
 Mechanizmus (žiaden LLM — rule-based koncept):
   1. Server-side clustering: FindSemanticClusters (HNSW graf nad vektormi
      zol_mem; na lorentz kolekcii sú hrany typ HIERARCHY). Honesty: interne
      beží zhlukovací engine servera nad vektormi — NIE čisto lorentz.
-  2. Pre každý cluster (>= min_size členov) postavi KONCEPT client-side:
-     zdielané kľúčové slová členov + hlava prvého člena.
-  3. Zápis ako NOVÝ bod do OBOCH pamätí (dual remember + A2A podpis) s
-     layer=L1, kind=semantic, metadata members/members_hash.
-  4. Dedup: members_hash (sha1 zo sort ids) — rovnaký cluster nezapíše
-     ináč druhý raz.
-  5. Report: clusters + vytvorené L1 ids.
+  2. PASS L0->L1: pre každý cluster (>= min_size L0 členov) postavi
+     KONCEPT client-side (zdielané kľúčové slová + hlava člena 1).
+  3. PASS L1->L2: rovnaké server clustery obmedzené na L1 členy ->
+     L2 koncept nad L1.
+  4. Zápis do OBOCH pamätí (dual remember + A2A podpis) s layer dst,
+     kind=semantic, metadata members/members_hash.
+  5. Dedup: members_hash (sha1 zo sort ids) — rovnaký len raz.
 
 Použitie:
   python toolkit/zol_ascend.py [--dry-run] [--min-size 3] [--max-clusters 6]
@@ -82,12 +82,12 @@ def keywords(texts, k=6):
     return [w for w, _ in top[:k]]
 
 
-def concept_text(member_ids, by_id):
+def concept_text(member_ids, by_id, dst):
     texts = [str((by_id[i].get("metadata") or {}).get("text", "")) for i in member_ids if i in by_id]
     kws = keywords([t for t in texts if t])
     head = texts[0][:160] if texts else ""
     return (
-        f"L1 koncept (ascend, {len(member_ids)} členov) — témata: "
+        f"{dst} koncept (ascend, {len(member_ids)} členov) — témata: "
         f"{', '.join(kws) if kws else '(bez kľúčových slov)'} | členovia: {list(member_ids)}"
         f" | hlava čl.1: {head}"
     )
@@ -97,18 +97,56 @@ def members_hash(ids):
     return hashlib.sha1(",".join(str(i) for i in sorted(ids)).encode()).hexdigest()
 
 
-def existing_hashes(points):
+def existing_hashes(points, layer):
     out = set()
     for p in points:
         md = p.get("metadata") or {}
-        if md.get("layer") == "L1" and md.get("members_hash"):
+        if md.get("layer") == layer and md.get("members_hash"):
             out.add(md["members_hash"])
     return out
 
 
-def dual_remember_l1(text, members, mhash):
+def ascend_pass(pts, clusters, src, dst, dry_run, min_size=2):
+    """Jeden ascend pass: clustery obmedzene na body vrstvy src -> koncept
+    do vrstvy dst (dual zapis, A2A podpis, dedup members_hash)."""
+    src_map = {}
+    dst_hashes = set()
+    for p in pts:
+        md = p.get("metadata") or {}
+        i = p.get("id")
+        if md.get("layer") == src:
+            src_map[i] = p
+        if md.get("layer") == dst and md.get("members_hash"):
+            dst_hashes.add(md["members_hash"])
+    by_id = {p.get("id"): p for p in pts}
+
+    report = {"from": src, "to": dst, "src_nodes": len(src_map),
+              "clusters_used": 0, "created": [], "skipped_dedup": []}
+    for ids in clusters:
+        cids = [i for i in ids if i in src_map]
+        if len(cids) < min_size:
+            continue
+        report["clusters_used"] += 1
+        cid = members_hash(cids)
+        if cid in dst_hashes:
+            report["skipped_dedup"].append({"members": list(cids), "members_hash": cid})
+            continue
+        text = concept_text(cids, by_id, dst)
+        if dry_run:
+            report["created"].append({"dry_run": True, "members": list(cids), "text_head": text[:140]})
+            continue
+        out = dual_remember_layer(text, cids, cid, dst)
+        report["created"].append({"members": list(cids), "members_hash": cid,
+                                  "dual_ok": bool(out.get("ok")), "dual_ok_detail": {
+                                      "A": bool((out.get("A") or {}).get("ok")),
+                                      "B": bool((out.get("B") or {}).get("ok"))}})
+        dst_hashes.add(cid)
+    return report
+
+
+def dual_remember_layer(text, members, mhash, layer):
     payload = json.dumps(
-        {"text": text, "kind": "semantic", "layer": "L1", "confidence": 0.75,
+        {"text": text, "kind": "semantic", "layer": layer, "confidence": 0.75,
          "source": "ascend", "members": ",".join(map(str, members)),
          "members_hash": mhash},
         ensure_ascii=False,
@@ -150,44 +188,30 @@ def main():
         return 0
 
     client, rpc_call, pts = all_points()
-    by_id = {}
     by_layer: dict[str, dict] = {}
     for p in pts:
-        i = p.get("id")
         md = p.get("metadata") or {}
-        if md.get("layer") in ("L0", "L1"):
-            by_id[i] = p
-            by_layer.setdefault(md.get("layer"), {})[i] = p
+        if md.get("layer") in ("L0", "L1", "L2"):
+            by_layer.setdefault(md.get("layer"), {})[p.get("id")] = p
 
-    l0_map = by_layer.get("L0", {})
-    if not l0_map:
+    if not by_layer.get("L0"):
         print(json.dumps({"ok": False, "note": "žiadne L0 body v B pamäti — bez ascendu"}, ensure_ascii=False))
         return 0
 
     min_size = max(2, int(args.min_size))
-    clusters = []
-    for ids in clusters_of(rpc_call, client, min_size, args.max_clusters):
-        cids = [i for i in ids if i in l0_map]
-        if len(cids) >= min_size:
-            clusters.append(cids)
+    try:
+        server_clusters = clusters_of(rpc_call, client, min_size, args.max_clusters * 2)
+    except RuntimeError as e:
+        print(json.dumps({"ok": False, "error": str(e)[:300]}, ensure_ascii=False))
+        return 1
 
-    existing = existing_hashes(pts)
-    report: dict = {"ok": True, "clusters_found": len(clusters), "nodes_l0": len(l0_map),
-                    "created": [], "skipped_dedup": []}
-    for cids in clusters:
-        cid = members_hash(cids)
-        text = concept_text(cids, by_id)
-        if cid in existing:
-            report["skipped_dedup"].append({"members": list(cids), "members_hash": cid})
-            continue
-        if args.dry_run:
-            report["created"].append({"dry_run": True, "members": list(cids), "text_head": text[:140]})
-            continue
-        out = dual_remember_l1(text, cids, cid)
-        report["created"].append({"members": list(cids), "members_hash": cid,
-                                  "dual_ok": bool(out.get("ok")), "dual": out})
-        existing.add(cid)
+    # Pass 1: L0->L1 (clustery obmedzené na L0 členov).
+    plain = [c for c in server_clusters if sum(1 for i in c if i in by_layer.get("L0", {})) >= min_size]
+    rep1 = ascend_pass(pts, plain, "L0", "L1", args.dry_run, min_size)
+    # Pass 2: L1->L2 (rovnaké server clustery obmedzené na L1 členov).
+    rep2 = ascend_pass(pts, server_clusters, "L1", "L2", args.dry_run, min_size)
 
+    report = {"ok": True, "pass_L0_L1": rep1, "pass_L1_L2": rep2}
     print(json.dumps(report, ensure_ascii=False, indent=1, default=str))
     return 0
 

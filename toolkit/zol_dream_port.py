@@ -126,19 +126,39 @@ def write_brief(decay_info, consol_info):
     return brief_path
 
 
+def decay_b(factor=0.95):
+    """Decay salience aj v B (lorentz) pamati — zol_decay_b.py subprocess."""
+    p = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "toolkit", "zol_decay_b.py"),
+         f"--factor={factor}"],
+        capture_output=True, text=True, encoding="utf-8",
+        env=dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8"),
+        cwd=ROOT, timeout=300,
+    )
+    try:
+        return json.loads(p.stdout or "{}")
+    except json.JSONDecodeError:
+        return {"ok": False, "error": (p.stderr or p.stdout)[-200:]}
+
+
 def main():
     os.makedirs(STATE, exist_ok=True)
     decay_info = decay_a()
+    decayb_info = decay_b()
     consol_info = consolidate_today() or {"ok": False, "note": "dnes ziadne episodic"}
     brief = write_brief(decay_info, consol_info)
     with open(os.path.join(STATE, "dream_last.json"), "w", encoding="utf-8") as f:
         json.dump(
-            {"ts": now(), "decay": decay_info, "konsolidacia": {
+            {"ts": now(), "decay": decay_info, "decay_b": {
+                "ok": bool(decayb_info.get("ok")), "changed": len(decayb_info.get("changed", []))},
+             "konsolidacia": {
                 "ok": bool(consol_info.get("ok")), "engine": consol_info.get("A_engine"),
             }, "brief": brief},
             f, ensure_ascii=False, indent=2,
         )
-    print(json.dumps({"ok": True, "decay": decay_info, "brief": brief}, ensure_ascii=False))
+    print(json.dumps({"ok": True, "decay": decay_info,
+                      "decay_b": {"ok": bool(decayb_info.get("ok")), "changed": len(decayb_info.get("changed", []))},
+                      "brief": brief}, ensure_ascii=False))
     return 0
 
 
