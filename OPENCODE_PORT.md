@@ -97,8 +97,9 @@
   heartbeat+log, dirty=6; watchdog: "OK server zivy, A mem ok"; dream: decay
   5 záznamov, brief `brief_2026-10-26.md`, poctivo "dnes žiadne episodic").
   Tick scheduled tasku overené reálne: "Zolander Loop" loop.log záznam 22:48:54
-  (nie manuálne spustenie). Watchdog/Dream tasks `State: Ready` — ich
-  plánované ticky ešte NEoverené live, len registrácia.
+  (nie manuálne spustenie) + "Zolander Watchdog" watchdog.log tick 22:54:03
+  (idle health OK). Dream task `State: Ready` — prvý odpal o 03:00,
+  overím ráno (plánované ticky potrebujú tiež reálny dôkaz, nie len registráciu).
 
 ## Roadmap (NIE je implementované — o tom to celé nie je)
 
