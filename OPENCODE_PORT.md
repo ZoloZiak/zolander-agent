@@ -81,6 +81,20 @@
   nie stdin pipe — PowerShell 5.1 posiela do stdin ASCII) sa uložil
   BAJTOVO IDENTICKY v A aj B (byte-compare true/true). Pozor: mojibake vo
   výpise konzoly je len zobrazovací artefakt, nie dáta.
+- **L1 ascend (L0 → L1 koncepty).** `toolkit/zol_ascend.py`: server-side
+  `FindSemanticClusters` (HNSW graf nad vektormi; na lorentz kolekcii hrany
+  typ HIERARCHY) → pre každý cluster client-side rule-based KONCEPT (zdielané
+  kľúčové slová členov + hlava) → zápis do OBOCH pamätí (dual remember +
+  A2A podpis) ako `layer=L1, kind=semantic` s `members`/`members_hash`
+  (sha1 zo sort id členov). DEDUP cez members_hash — rovnaký cluster
+  sa nezapíše druhý raz. Honesty: klastrovanie je server engine (nie čisto
+  lorentz), koncept je rule-based (nie LLM destilát), ASCEND RPC na serveri
+  NIE je (overené v proto/server.rs — GetSubsumptionTree je len
+  HNSW-prevádzka).
+  *Green-check (2026-10-26, 23:45):* 4 clustery z 11 L0 bodov → 4 L1
+  koncepty (B ids 23–26) s plnými members/members_hash v A aj B;
+  druhý beh → `skipped_dedup` všetky 4 (dedup dôkaz); `verify --limit 6` →
+  12/12 podpisov OK (L1 vrátane). `tree --root <id>` = GetSubsumptionTree.
 - **Mechanické bezpečie.** `permissions` v `.opencode/opencode.json`: shell `ask`
   default, git read allow, `rm -rf` / `force-push` deny, external dir `ask`.
   (Tvrdý zámok v configu, nie v prose.)
@@ -108,11 +122,10 @@
 
 ## Roadmap (NIE je implementované — o tom to celé nie je)
 
-1. **Hyperbolická pamat L2/L3 vrstvy + ascend.** BÁZA (fáza 2 jadro) BEŽÍ
-   (server + dual recall), štart pri logone cez Startup .vbs + watchdog
-   restart. NIE je to pravá Windows služba a chýbajú vrstvy nad ňou:
-   L1/L2/L3 iterácie (clustering, ascend cez server graph RPCs), decay na
-   B strane (dream decay mení len A).
+1. **Hyperbolická pamat L2/L3 vrstvy.** L1 BEŽÍ (pozri vyššie ascend). Ostáva:
+   L2 (ascend nad L1 konceptmi — väčšie tematické okruhy), decay aj na B
+   strane (dream decay mení len A), forget/delete politika (teraz nič
+   NEmaze, len navrhuje).
 2. **Cron daemony — zvyšok.** Loop/watchdog/dream portované + Scheduled Tasks
    (pozri "čo beží"). Ostáva: `notify` (notifikácie),
    LLM konsolidácia v drame (teraz rule-based), live overenie plánovaných

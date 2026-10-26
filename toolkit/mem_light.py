@@ -91,6 +91,9 @@ def cmd_remember(args: argparse.Namespace) -> dict:
         entry["sig"] = args.sig
         entry["sig_from_fp"] = args.from_fp
         entry["sig_ts"] = args.ts_signed
+    if getattr(args, "members_hash", None):
+        entry["members"] = args.members
+        entry["members_hash"] = args.members_hash
     if not entry["text"]:
         raise SystemExit("text nesmie byt prazdny")
     path = memory_path()
@@ -154,6 +157,8 @@ def main() -> None:
     r.add_argument("--sig", default=None, help="A2A Ed25519 hex podpis (nepovinny)")
     r.add_argument("--from_fp", dest="from_fp", default=None)
     r.add_argument("--ts_signed", default=None)
+    r.add_argument("--members", default=None, help="ascend L1: ids L0 členov (čiarkami)")
+    r.add_argument("--members_hash", default=None, help="ascend L1: sha1 dedup kľúč")
     r.set_defaults(func=cmd_remember)
     q = sub.add_parser("recall")
     q.add_argument("--query", default="")

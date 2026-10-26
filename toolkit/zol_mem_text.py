@@ -25,6 +25,13 @@ import os
 import sys
 import time
 
+# stdout UTF-8: nadriadený číta encoding="utf-8"; bez reconfigure tento
+# proces píše locale (cp1250) a reader-thread rodiča padá na nevalidných bajtoch.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 # --- konstanty (anti-dup: dimenstion/metric su tu, lebo tu sa VZDYTEE pouzivaju) ---
 COLLECTION = "zol_mem"
 LORENTZ_DIM = 129  # spatial 128 + 1 casova zlozka
@@ -145,6 +152,9 @@ def cmd_remember(_: argparse.Namespace) -> dict:
         "sig": str(obj.get("sig") or ""),
         "sig_from_fp": str(obj.get("from_fp") or ""),
         "sig_ts": str(obj.get("ts_signed") or ""),
+        # Ascend L1 (zol_ascend): viazanosť konceptu na L0 členov.
+        "members": str(obj.get("members") or ""),
+        "members_hash": str(obj.get("members_hash") or ""),
         # Server-side InsertText NESTORUJE text (embedne a zahodi, pozri
         # crates/hyperspace-server/src/server.rs InsertText handler) — plaintext
         # preto nesie metadata a recall ho vrati z nej.

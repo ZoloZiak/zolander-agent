@@ -41,7 +41,9 @@ def dual_remember(text, kind, layer, conf):
         [sys.executable, os.path.join(ROOT, "toolkit", "zol_remember_dual.py")],
         input=json.dumps({"text": text, "kind": kind, "layer": layer,
                           "confidence": conf, "source": "dream"}, ensure_ascii=False),
-        capture_output=True, text=True, encoding="utf-8", cwd=ROOT, timeout=120,
+        capture_output=True, text=True, encoding="utf-8",
+        env=dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8"),
+        cwd=ROOT, timeout=120,
     )
     try:
         return json.loads(p.stdout or "{}")

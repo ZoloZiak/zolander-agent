@@ -34,6 +34,15 @@ import time
 TOOLKIT = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TOOLKIT)
 
+# stdout/stderr čisto UTF-8: rodičovské procesy dekódujú s encoding="utf-8";
+# bez reconfigure tento proces píše cp1250 (locale) a reader-thread v
+# rodičovi padá na nevalidných bajtoch -> výpis príde prázdny.
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001 — fallback: bez reconfigure
+        pass
+
 KINDS = {"episodic", "semantic", "procedural", "identity"}
 LAYERS = {"L0", "L1", "L2", "L3"}
 
@@ -231,16 +240,20 @@ def main(argv) -> int:
         except Exception as e:  # noqa: BLE001 — hlasim co narazilo, nepadam
             return {"ok": False, "error": str(e)}
 
+    extra = {"members": str(obj.get("members") or ""), "members_hash": str(obj.get("members_hash") or "")}
     payload = json.dumps(
         {"text": text, "kind": kind, "layer": layer, "confidence": conf,
          "source": source, "project": project, "sig": sig,
-         "from_fp": msg["from_fp"], "ts_signed": msg["ts"]},
+         "from_fp": msg["from_fp"], "ts_signed": msg["ts"], **extra},
         ensure_ascii=False,
     )
 
-    a = child([os.path.join(TOOLKIT, "mem_light.py"), "remember", f"--text={text}", f"--kind={kind}",
-               f"--layer={layer}", f"--confidence={conf}", f"--source={source}", f"--project={project}",
-               f"--sig={sig}", f"--from_fp={msg['from_fp']}", f"--ts_signed={msg['ts']}"])
+    a_args = [os.path.join(TOOLKIT, "mem_light.py"), "remember", f"--text={text}", f"--kind={kind}",
+              f"--layer={layer}", f"--confidence={conf}", f"--source={source}", f"--project={project}",
+              f"--sig={sig}", f"--from_fp={msg['from_fp']}", f"--ts_signed={msg['ts']}"]
+    if extra["members_hash"]:
+        a_args += [f"--members={extra['members']}", f"--members_hash={extra['members_hash']}"]
+    a = child(a_args)
     b = child([os.path.join(TOOLKIT, "zol_mem_text.py"), "remember"], stdin_payload=payload)
 
     out = {
