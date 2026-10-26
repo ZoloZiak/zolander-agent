@@ -1,4 +1,4 @@
-# OPENCODE_PORT.md — Zolander na opencode, faz 1
+# OPENCODE_PORT.md — Zolander na opencode, fáza 1 + fáza 2 (dual pamat)
 
 > Zolander pôvodne bezal na [Hermes Agent](https://hermes-agent.nousresearch.com) (macOS).
 > Toto je jeho port na **opencode** (Windows) s modelom **`opencode/glm-5.3-flash-free`**
@@ -13,7 +13,7 @@
   (`default_agent: zolander`, permissions).
   *Zdroj:* harness skill-list ukazuje skill `zolander` — discovery funguje.
 - **Recall-first (port hermes `pre_llm_call` hook).** Zastarané — superseded
-  dual recall Wool nižšie (fáza 2). Pôvodný single-shot injekt bol vymenený
+  dual recallom nižšie (fáza 2). Pôvodný single-shot injekt bol vymenený
   za `[Zolander DUAL RECALL — A/B test]` blok.
 - **Hard foundation do systému (anti-drift).** Ten istý plugin — session hook
   `context` pushuje do systemového kontextu krátký F11/sandbox/honesty blok
@@ -45,8 +45,11 @@
   gRPC NOT_FOUND na neexistujúcej kolekcii pred initom je poctivé znamenie);
   `zol_mem_text.py init` → ok:true; remember → id, recall → hit s `distance`
   (lorentz d 0.713) a plným plaintextom (overené 2026-10-26).
-  Štart serveru: `wsl -d Ubuntu --cd /home/zolo/hyperspace-db-401 --
-  target/release/hyperspace-server` (manuálne — EšTE NIE Windows služba).
+  Štart serveru pri logone: Startup-folder
+  `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\zolander-hyperspace.vbs`
+  (skryté `wsl.exe` okno, beží na pozadí). Pozor: to nie je Windows služba —
+  len autostart pri logone; neuhol snáďno-WSL-šutdown ho zabije (watchdog
+  ho restartne, pozri Scheduled Tasks nižšie).
 - **DUAL RECALL A/B (fáza 2 injekt).** Plugin session hook `prompt` vstrieka
   `[Zolander DUAL RECALL — A/B test]` blok: **RECALL A** = lexikálna L0
   (`mem_light.py`, keyword prekryv + recencia), **RECALL B** = semantická
@@ -63,23 +66,55 @@
   injekt a validuje formát; overené 2026-10-26 (A: hit s 13.283, B: hit
   lorentz d 0.713, oba s plným textom). Live recall cez server embedding
   overené 2026-10-26.
+- **A2A Ed25519 podpis pamati (integrita + identita zápisov).** Orchestrátor
+  `zol_remember_dual.py` podpíše každý zápis JEDNým podpisom pred zápisom do
+  oboch pamätí (kanonické telo `json.dumps({text,kind,layer,confidence},
+  sort_keys, separators=(",",":"))`), podpis nesú oba záznamy (A: polia
+  `sig`/`sig_from_fp`/`sig_ts` v JSONL; B: kľúče v metadannoch gRPC bodu).
+  Identita: `identity/zolander_ed25519.key`, fingerprint `9ae2fbc6…`.
+  *Green-check:* `python toolkit/zol_remember_dual.py verify --limit 5` →
+  overí podpisy v OBOCH pamätiach (overené 2026-10-26: 2 overené podpísané,
+  4 staré legacy `unsigned` — zápisy pred wiringom, poctivo odlíšené, 0 zlyhale).
+  Tamper test: zmena textu po podpise → `PODPIS NESEDI` (overené 2026-10-26).
 - **Mechanické bezpečie.** `permissions` v `.opencode/opencode.json`: shell `ask`
   default, git read allow, `rm -rf` / `force-push` deny, external dir `ask`.
   (Tvrdý zámok v configu, nie v prose.)
+- **Daemony portované (loop/watchdog/dream) + Scheduled Tasks.** Port hermes
+  launchd cronov na Windows (PowerShell `Register-ScheduledTask`, user-level;
+  `schtasks` CLI je v tomto prostredí Access denied — obídené):
+  - **"Zolander Loop"** (každých 15 min) → `toolkit/zol_loop_port.py`:
+    integrity check + heartbeat `state/heartbeat.txt` + sken nezacomitovaných
+    zmien repa + `logs/loop.log`. Cisto stdlib, bez LLM.
+  - **"Zolander Watchdog"** (každých 15 min) → `toolkit/zol_watchdog_port.py`:
+    health `zol_mem_text.py`; ak server padol, Popen-restartuje WSL server
+    (log `logs/watchdog.log`). Nemaže nič — len restart.
+  - **"Zolander Dream"** (denne 03:00) → `toolkit/zol_dream_port.py`:
+    decay ×0.95 salience na A záznamoch, rule-based konsolidácia dňa do L1
+    (dual zapis, A2A podpis), ranný brief `denniky/brief_<dátum>.md`. Nič
+    NEmaze — forget len navrhuje. Honesty: konsolidácia je rule-based destilát,
+    NIE LLM (port nemá MCP consolidate engine).
+  *Green-check:* jednorázové behy všetkých troch overené 2026-10-26 (loop:
+  heartbeat+log, dirty=6; watchdog: "OK server zivy, A mem ok"; dream: decay
+  5 záznamov, brief `brief_2026-10-26.md`, poctivo "dnes žiadne episodic").
+  Tick scheduled tasku overené reálne: "Zolander Loop" loop.log záznam 22:48:54
+  (nie manuálne spustenie). Watchdog/Dream tasks `State: Ready` — ich
+  plánované ticky ešte NEoverené live, len registrácia.
 
 ## Roadmap (NIE je implementované — o tom to celé nie je)
 
-1. **Hyperbolická pamat L2/L3 vrstvy + dream/ascend.** BÁZA (fáza 2 jadro)
-   ČO BEZÍ dnes (pozri vyššie: HyperspaceDB server vo WSL + `zol_mem` lorentz
-   kolekcia + dual recall) — ale NIE je to Windows služba: server sa štartuje
-   manuálne (`wsl -d Ubuntu --cd /home/zolo/hyperspace-db-401 --
-   target/release/hyperspace-server`). Chýbajúce vrstvy nad ňou: L1/L2/L3
-   iterácie (clustering, ascend), dream daemon, decay/salience rewrites.
-2. **Cron daemony (loop/dream/brief/watchdog/notify).** Hermes launchd/systemd →
-   Windows Scheduled Tasks. Dnes NIE (odhad: ~1 deň práce, ale bez testu to niet).
+1. **Hyperbolická pamat L2/L3 vrstvy + ascend.** BÁZA (fáza 2 jadro) BEŽÍ
+   (server + dual recall), štart pri logone cez Startup .vbs + watchdog
+   restart. NIE je to pravá Windows služba a chýbajú vrstvy nad ňou:
+   L1/L2/L3 iterácie (clustering, ascend cez server graph RPCs), decay na
+   B strane (dream decay mení len A).
+2. **Cron daemony — zvyšok.** Loop/watchdog/dream portované + Scheduled Tasks
+   (pozri "čo beží"). Ostáva: `notify` (notifikácie),
+   LLM konsolidácia v drame (teraz rule-based), live overenie plánovaných
+   tickov Watchdogu/Dreamu po prvom odpale.
 3. **MoA cross-model review** (opt-in analóg `ZOL_VERIFY_MOA` z hook_verify).
-4. **A2A Ed25519 podpis** nad light pamatou (`toolkit/a2a.py` existuje a bezi,
-   nepripojený v porte; kľúč sa generuje ako doteraz cez gen_identity.py).
+4. **A2A peer vrstva (guestbook/inbox).** PODPIS pamati JE napojený (pozri
+   vyššie); ostáva peer most (known_peers, spravy od iných agentov) —
+   `toolkit/a2a.py` ho má, port nie je pripojený k peerom.
 5. **STT (slovenský Whisper), Matrix/WhatsApp gateway, Palantir, macOS banner** —
    neportované; väčšina závisí na prostredie (korporát/macOS), nie na porte.
 

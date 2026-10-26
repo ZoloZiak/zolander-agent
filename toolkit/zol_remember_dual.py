@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 """zol_remember_dual.py — zapis jednej spomienky do OBOCH pamati naraz (A/B test).
 
@@ -6,12 +7,18 @@ B = zol_mem_text.py (HyperspaceDB lorentz server-side embedding, kolekcia zol_me
 
 Rovnaky obsah, rovnake metadata, rozne enginy — aby dual recall (A vs B v
 injekte) testoval porovnatelne data, nie rozne. Id pre A je ts, id pre B je
-monotonicky int (state/mem_next_id.txt). Fail-openNie: jedna strana moze padnut,
-potom vrati ok:false pre tu stranu a zachova druhu — hlasiteľ pravdivo.
+monotonicky int (state/mem_next_id.txt). Fail-open: jedna strana moze padnut,
+potom vrati ok:false pre tu stranu a zachova druhu — hlasitel pravdivo.
+
+Obsah je az po zapis PODPISANY Ed25519 identitou (a2a.py, fingerprint
+9ae2fbc6...): jeden podpis pre obe pamati (zaznam nesie sig, sig_from_fp,
+sig_ts). Rie STATUS integritu: toto si zapisal Zolander s tymto klucom
+a obsah nebol po zmeny zmeneny.
 
 Pouzitie:
   python toolkit/zol_remember_dual.py < stdin.json
   stdin JSON {text, [kind=episodic, layer=L0, confidence=0.6, source, project]}
+  python toolkit/zol_remember_dual.py verify [--limit N]    # over podpisy v oboch pamatiach
 
 Vystup JSON na stdout: {"ok": ..., "A": {...}, "B": {...}}
 """
@@ -30,7 +37,116 @@ KINDS = {"episodic", "semantic", "procedural", "identity"}
 LAYERS = {"L0", "L1", "L2", "L3"}
 
 
-def main() -> int:
+def make_body(text, kind, layer, conf):
+    """Presny kanonicky tvar podpisaneho tela (rovnaky pri sign a pri verify)."""
+    return json.dumps(
+        {"text": text, "kind": kind, "layer": layer, "confidence": conf},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+
+
+def _a_records(limit):
+    path = os.path.join(ROOT, "state", "zol_memory.jsonl")
+    if not os.path.exists(path):
+        return []
+    lines = open(path, encoding="utf-8").read().splitlines()
+    out = []
+    for line in reversed(lines):
+        if len(out) >= limit:
+            break
+        try:
+            o = json.loads(line)
+            if isinstance(o, dict):
+                out.append(o)
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def _b_records(limit):
+    env = dict(os.environ, ZOLANDER_ROOT=ROOT,
+               HS_SDK_PATH=os.environ.get("HS_SDK_PATH") or os.path.normpath(
+                   os.path.expanduser(r"~\hyperspace-db\sdks\python")))
+    sys.path.insert(0, env["HS_SDK_PATH"])
+    from hyperspace.client import HyperspaceClient  # noqa: E402
+    c = HyperspaceClient(host=env.get("HYPERSPACE_HOST", "localhost:50051"),
+                         api_key=env.get("HYPERSPACE_API_KEY", "I_LOVE_HYPERSPACEDB"))
+    stats = c.get_collection_stats("zol_mem")
+    count = int(stats.get("count", 0))
+    n = min(count, max(limit, 400))
+    pts = c.scroll(limit=n, collection="zol_mem") or []
+    out = []
+    for p in pts:
+        md = p.get("metadata") or {}
+        if md.get("sig"):
+            out.append({"id": p.get("id"), "metadata": md})
+    return out
+
+
+def cmd_verify(argv) -> int:
+    limit = int(os.environ.get("ZOL_VERIFY_LIMIT") or "10")
+    if "--limit" in argv:
+        limit = int(argv[argv.index("--limit") + 1])
+    sys.path.insert(0, TOOLKIT)
+    import a2a  # noqa: E402
+
+    def check(fp, ts, body, sig):
+        msg = {"from_fp": fp, "ts": ts, "body": body, "sig": sig}
+        ok, why = a2a.verify_msg(msg)
+        return {"sig_ok": bool(ok), "why": why}
+
+    a_rows, b_rows = [], []
+    for rec in _a_records(limit)[:limit]:
+        if not rec.get("sig"):
+            a_rows.append({"engine": "A", "id": rec.get("ts"), "unsigned": True,
+                           "text_head": str(rec.get("text", ""))[:80]})
+            continue
+        try:
+            body = make_body(rec["text"], rec["kind"], rec["layer"], float(rec["confidence"]))
+        except (KeyError, ValueError, TypeError) as e:
+            a_rows.append({"engine": "A", "id": rec.get("ts"), "sig_ok": False, "why": f"zaznam bez pola: {e}"})
+            continue
+        r = check(rec["sig_from_fp"], rec["sig_ts"], body, rec["sig"])
+        a_rows.append({"engine": "A", "id": rec.get("ts"), **r, "text_head": str(rec.get("text", ""))[:80]})
+
+    try:
+        b_all = _b_records(limit)
+    except Exception as e:  # noqa: BLE001 — verify hlasit, nie padat
+        b_rows.append({"engine": "B", "sig_ok": False, "why": f"server nedostupny: {e}"})
+        b_all = []
+    for p in b_all[:limit]:
+        md = p["metadata"]
+        try:
+            body = make_body(md["text"], md["kind"], md["layer"], float(md["confidence"]))
+        except (KeyError, ValueError, TypeError) as e:
+            b_rows.append({"engine": "B", "id": p.get("id"), "sig_ok": False, "why": f"zaznam bez pola: {e}"})
+            continue
+        r = check(md.get("sig_from_fp"), md.get("sig_ts"), body, md.get("sig"))
+        b_rows.append({"engine": "B", "id": p.get("id"), **r, "text_head": str(md.get("text", ""))[:80]})
+
+    all_rows = a_rows + b_rows
+    signed = [r for r in all_rows if r.get("sig_ok") is not None or r.get("unsigned") is True]
+    ok_n = sum(1 for r in all_rows if r.get("sig_ok") is True)
+    unsigned = sum(1 for r in all_rows if r.get("unsigned"))
+    bad = [r for r in all_rows if r.get("sig_ok") is False]
+
+    out = {
+        "ok": len(bad) == 0,
+        "mode": "verify-dual",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "overene": ok_n,
+        "nepodpisane": unsigned,
+        "zlyhale": len(bad),
+        "records": all_rows,
+    }
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return 0 if len(bad) == 0 and unsigned == 0 else (0 if len(bad) == 0 else 1)
+
+
+def main(argv) -> int:
+    if argv and argv[0] == "verify":
+        return cmd_verify(argv[1:])
+
     raw = sys.stdin.read().strip()
     if not raw:
         print(json.dumps({"ok": False, "error": "ocakavam JSON na stdin — prazdny vstup"}, ensure_ascii=False))
@@ -61,6 +177,16 @@ def main() -> int:
     source = str(obj.get("source", "session"))
     project = str(obj.get("project", ""))
 
+    # A2A A2A podpis jeden pre obe pamati (identita aj integrita obsahu).
+    sys.path.insert(0, TOOLKIT)
+    import a2a  # noqa: E402
+    body = json.dumps(
+        {"text": text, "kind": kind, "layer": layer, "confidence": conf},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+    msg = a2a.sign_body(body)
+    sig = msg["sig"]
+
     env = dict(os.environ, ZOLANDER_ROOT=ROOT)
     env.setdefault("HS_SDK_PATH", os.path.normpath(os.path.expanduser(r"~\hyperspace-db\sdks\python")))
     env.setdefault("HYPERSPACE_HOST", "localhost:50051")
@@ -88,12 +214,15 @@ def main() -> int:
             return {"ok": False, "error": str(e)}
 
     payload = json.dumps(
-        {"text": text, "kind": kind, "layer": layer, "confidence": conf, "source": source, "project": project},
+        {"text": text, "kind": kind, "layer": layer, "confidence": conf,
+         "source": source, "project": project, "sig": sig,
+         "from_fp": msg["from_fp"], "ts_signed": msg["ts"]},
         ensure_ascii=False,
     )
 
     a = child([os.path.join(TOOLKIT, "mem_light.py"), "remember", f"--text={text}", f"--kind={kind}",
-               f"--layer={layer}", f"--confidence={conf}", f"--source={source}", f"--project={project}"])
+               f"--layer={layer}", f"--confidence={conf}", f"--source={source}", f"--project={project}",
+               f"--sig={sig}", f"--from_fp={msg['from_fp']}", f"--ts_signed={msg['ts']}"])
     b = child([os.path.join(TOOLKIT, "zol_mem_text.py"), "remember"], stdin_payload=payload)
 
     out = {
@@ -110,5 +239,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    code = main()
+    code = main(sys.argv[1:])
     sys.exit(code)

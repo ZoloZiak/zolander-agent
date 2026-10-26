@@ -141,6 +141,10 @@ def cmd_remember(_: argparse.Namespace) -> dict:
         "project": str(obj.get("project", "")),
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "engine": "lorentz-server-v1",
+        # A2A Ed25519 podpis (nepovinny — bez orchestratora je zapis nepodpisany)
+        "sig": str(obj.get("sig") or ""),
+        "sig_from_fp": str(obj.get("from_fp") or ""),
+        "sig_ts": str(obj.get("ts_signed") or ""),
         # Server-side InsertText NESTORUJE text (embedne a zahodi, pozri
         # crates/hyperspace-server/src/server.rs InsertText handler) — plaintext
         # preto nesie metadata a recall ho vrati z nej.

@@ -85,6 +85,12 @@ def cmd_remember(args: argparse.Namespace) -> dict:
         "project": args.project,
         "engine": "light-lexical-v1",
     }
+    # A2A podpis (nepovinny): ak orchestr (napr. zol_remember_dual.py) dodal
+    # podpis, nesiem ho v zazname; verify ho moze prepoctat.
+    if getattr(args, "sig", None):
+        entry["sig"] = args.sig
+        entry["sig_from_fp"] = args.from_fp
+        entry["sig_ts"] = args.ts_signed
     if not entry["text"]:
         raise SystemExit("text nesmie byt prazdny")
     path = memory_path()
@@ -145,6 +151,9 @@ def main() -> None:
     r.add_argument("--confidence", default="0.6")
     r.add_argument("--source", default="manual")
     r.add_argument("--project", default="")
+    r.add_argument("--sig", default=None, help="A2A Ed25519 hex podpis (nepovinny)")
+    r.add_argument("--from_fp", dest="from_fp", default=None)
+    r.add_argument("--ts_signed", default=None)
     r.set_defaults(func=cmd_remember)
     q = sub.add_parser("recall")
     q.add_argument("--query", default="")
