@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode/glm-5.3-flash-free",
+  "default_agent": "zolander",
+  "permissions": [
+    { "action": "external_directory", "resource": "*", "effect": "ask" },
+    { "action": "shell", "resource": "*", "effect": "ask" },
+    { "action": "shell", "resource": "git status*", "effect": "allow" },
+    { "action": "shell", "resource": "git diff*", "effect": "allow" },
+    { "action": "shell", "resource": "git log*", "effect": "allow" },
+    { "action": "shell", "resource": "git branch*", "effect": "allow" },
+    { "action": "shell", "resource": "python toolkit/*", "effect": "allow" },
+    { "action": "shell", "resource": "pip install*", "effect": "ask" },
+    { "action": "shell", "resource": "git push --force*", "effect": "deny" },
+    { "action": "shell", "resource": "git push * main", "effect": "ask" },
+    { "action": "shell", "resource": "*rm -rf *", "effect": "deny" },
+    { "action": "shell", "resource": "*del /s *", "effect": "deny" },
+    { "action": "shell", "resource": "*Remove-Item*Recurse*Force*", "effect": "ask" },
+    { "action": "shell", "resource": "*format *", "effect": "deny" },
+    { "action": "skill", "resource": "*", "effect": "allow" },
+    { "action": "subagent", "resource": "*", "effect": "ask" }
+  ]
+}

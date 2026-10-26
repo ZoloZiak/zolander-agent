@@ -240,6 +240,17 @@ def main():
         obj = json.loads(sys.stdin.read())
         model = obj.get("model", "opus")
         print(json.dumps(gate(obj["problem"], model=model), ensure_ascii=False, indent=2))
+    elif cmd == "gate-classify":
+        # opencode port (faz 1): len deterministicka klasifikacia, ziaden lift
+        # (lift robi samotny agent ako svoj double-take; ziaden externy model).
+        obj = json.loads(sys.stdin.read())
+        serious, dovod, score = should_double_take(obj["problem"])
+        res = {"double_take": serious, "dovod": dovod, "skore": score}
+        if serious:
+            res["note"] = "serious — urob VLASTNY double-take (lift nie je v porte)"
+        else:
+            res["note"] = "trivialne — double-take preskoceny (setrim cas/LLM)"
+        print(json.dumps(res, ensure_ascii=False, indent=2))
     elif cmd == "lift":
         obj = json.loads(sys.stdin.read())
         model = obj.get("model", "opus")
