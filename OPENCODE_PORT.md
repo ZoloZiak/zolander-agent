@@ -76,6 +76,11 @@
   overí podpisy v OBOCH pamätiach (overené 2026-10-26: 2 overené podpísané,
   4 staré legacy `unsigned` — zápisy pred wiringom, poctivo odlíšené, 0 zlyhale).
   Tamper test: zmena textu po podpise → `PODPIS NESEDI` (overené 2026-10-26).
+  *UTF-8 green-check (2026-10-26, 23:18):* zápis diakritiky (ť/ž/ľ/ň/ô/č/š)
+  cez `--file` (UTF-8 payload súbor + `PYTHONUTF8=1` env pre detské procesy,
+  nie stdin pipe — PowerShell 5.1 posiela do stdin ASCII) sa uložil
+  BAJTOVO IDENTICKY v A aj B (byte-compare true/true). Pozor: mojibake vo
+  výpise konzoly je len zobrazovací artefakt, nie dáta.
 - **Mechanické bezpečie.** `permissions` v `.opencode/opencode.json`: shell `ask`
   default, git read allow, `rm -rf` / `force-push` deny, external dir `ask`.
   (Tvrdý zámok v configu, nie v prose.)

@@ -16,7 +16,8 @@ sig_ts). Rie STATUS integritu: toto si zapisal Zolander s tymto klucom
 a obsah nebol po zmeny zmeneny.
 
 Pouzitie:
-  python toolkit/zol_remember_dual.py < stdin.json
+  python toolkit/zol_remember_dual.py --file payload.json   # preferované (UTF-8 čistý)
+  python toolkit/zol_remember_dual.py < stdin.json          # pozor: ASCII mangle v PS 5.1
   stdin JSON {text, [kind=episodic, layer=L0, confidence=0.6, source, project]}
   python toolkit/zol_remember_dual.py verify [--limit N]    # over podpisy v oboch pamatiach
 
@@ -147,7 +148,19 @@ def main(argv) -> int:
     if argv and argv[0] == "verify":
         return cmd_verify(argv[1:])
 
-    raw = sys.stdin.read().strip()
+    if "--file" in argv:
+        # Zolander hojne pouziva PowerShell 5.1, ktory nativnym stdin posiela
+        # ASCII ($OutputEncoding default) a DAO diakritiku. Súbor čítaný
+        # pythonom s encoding="utf-8" je nevyhnutný pre čistý zápis pamätí.
+        path = argv[argv.index("--file") + 1]
+        try:
+            with open(path, encoding="utf-8") as f:
+                raw = f.read().strip()
+        except OSError as e:
+            print(json.dumps({"ok": False, "error": f"nie je možné čítať --file {path}: {e}"}, ensure_ascii=False))
+            return 2
+    else:
+        raw = sys.stdin.read().strip()
     if not raw:
         print(json.dumps({"ok": False, "error": "ocakavam JSON na stdin — prazdny vstup"}, ensure_ascii=False))
         return 2
@@ -188,6 +201,11 @@ def main(argv) -> int:
     sig = msg["sig"]
 
     env = dict(os.environ, ZOLANDER_ROOT=ROOT)
+    # Detské procesy bez PYTHONUTF8=1 čítajú stdin a píšu stdout s LOCALE
+    # encodingom (cp1250 tu) -> diakritika sa poškodí, resp. vzniknú
+    # \udcxx surrogáty, ktoré protobuf zamietne. Vynútime UTF-8 obojsmerne.
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("HS_SDK_PATH", os.path.normpath(os.path.expanduser(r"~\hyperspace-db\sdks\python")))
     env.setdefault("HYPERSPACE_HOST", "localhost:50051")
     env.setdefault("HYPERSPACE_API_KEY", "I_LOVE_HYPERSPACEDB")
