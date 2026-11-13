@@ -36,9 +36,9 @@ FIX = "--fix" in sys.argv
 QUERIES = [
     "identita Zolander veducko humor mentor",
     "pamat recall YAR BM25 Gemma embedding vektor decay",
-    "zdravie lekar vysetrenie poistovna",
-    "byvanie example district prenajom izba Dzielnica",
-    "sandbox zamknuty Mac MDM shell prikaz bezpecnost endpoint-security",
+    "projekt uloha termin rozpocet dodavatel faktura zmluva",
+    "nakup material dodavka objednavka sklad pobocka",
+    "sandbox zamknuty server shell prikaz bezpecnost firewall",
     "HyperspaceDB kolekcia lorentz cosine port container OrbStack",
     "LLM API key provider Opus Sonnet GPT Gemini fallback Groq",
     "geometria hyperbolicka cone strom hierarchia klaster product-space",

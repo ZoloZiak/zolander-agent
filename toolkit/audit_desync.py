@@ -53,9 +53,9 @@ if os.path.exists(TRASH):
 QUERIES = [
     "identita Zolander veducko humor mentor",
     "pamat recall YAR BM25 Gemma embedding vektor",
-    "zdravie lekar vysetrenie poistovna",
-    "byvanie example district prenajom izba",
-    "sandbox zamknuty Mac MDM shell prikaz bezpecnost",
+    "projekt uloha termin rozpocet dodavatel faktura",
+    "nakup material dodavka objednavka sklad",
+    "sandbox zamknuty server shell prikaz bezpecnost",
     "HyperspaceDB kolekcia lorentz cosine port container",
     "LLM API key provider Opus Sonnet GPT Gemini",
     "geometria hyperbolicka cone strom hierarchia klaster",
