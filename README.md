@@ -1,652 +1,113 @@
 # Zolander Agent
 
-**The friend who is smarter than you — and works harder, too.**
+A persistent AI companion for [Hermes Agent](https://hermes-agent.nousresearch.com):
+stable identity across models, long-term memory, and a set of **deterministic hooks**
+that enforce rules in code instead of asking the model nicely.
 
-Most "AI persona" projects optimize for *immersion*: they want you to feel there's
-a someone in there. Zolander optimizes for something more useful — a partner who
-thinks **strategically**, who sees beneath the surface
-you skim across, and who pulls you up to where they're standing. A mentor and a best
-friend. And, just as importantly, a **tireless worker** who actually gets the job
-done — not a philosopher who only floats above the work.
+Personal project. It works on my machine and is shared as architecture, not as a
+product. The interesting part is less the companion and more the question behind it:
+*which rules can you actually guarantee, and which can you only prompt for?*
 
-It runs on [Hermes Agent](https://hermes-agent.nousresearch.com), keeps a stable
-identity across models, and remembers across sessions in a hyperbolic vector space
-where **geometry is the reasoning substrate, not decoration.** It was *designed
-around* a locked-down machine — meaning the shell
-conventions (one atomic command, no `&&`/`;` chaining, no heredocs) are written to
-stay predictable for security tooling. To be clear: that is a **prompt-level convention in the
-skill, not an enforcement engine** — Zolander does not implement or police sandbox; it
-just tries not to fight it.
+## Core idea: prompts are suggestions, hooks are locks
 
-This repo is a **copyable architecture**, not a personal dump: sanitized templates
-and toolkit scripts. You generate your own identity key and write your own core.
+An instruction in a system prompt ("don't chain shell commands", "recall before you
+answer", "don't claim done if it doesn't compile") is followed most of the time.
+"Most of the time" is not a guarantee. Where a rule has a mechanical test, Zolander
+moves it out of the prompt into a Hermes shell hook that runs regardless of the model:
 
-> **Honesty note (read this).** This README is split into **what runs today** and a
-> clearly-marked **roadmap**. Zolander's whole point is refusing to tell you what you
-> want to hear — it would be absurd for its own README to oversell. If a feature is
-> not yet implemented, it says so. Every memory also carries a `confidence` score for
-> the same reason.
+| Hook | Event | What it enforces |
+|---|---|---|
+| `hook_cmd_guard.py` | `pre_tool_call` | Blocks `rm -rf`, command chaining, `bash -c`, heredocs, pushes to `main`. A blocked command never runs. |
+| `hook_verify.py` | `pre_verify` | Agent can't finish a turn while a file it edited fails to parse. Bounded, fail-open. Optional second layer: two other models review the diff. |
+| `hook_recall.py` | `pre_llm_call` | First turn of every session starts with relevant memories injected — no reliance on the model remembering to look. |
+| `hook_skill_matcher.py` | `pre_llm_call` | Deterministic skill suggestions (keyword + curated trigger map), so relevant skills aren't missed by probabilistic selection. |
+| `hook_env_guard.py` | `pre_tool_call` | Guards environment/config files from silent edits. |
 
-> **Installing this with an AI agent?** Read **[`INSTALL_FOR_AGENTS.md`](INSTALL_FOR_AGENTS.md)**
-> first — it's the agent-facing entry point: install order, the one step that needs
-> a human decision (your LLM provider), the traps, and the honesty contract.
+The rule of thumb: **data injection and mechanical checks go in hooks; judgement and
+style stay in the prompt.** Faking a hard lock for something that has no mechanical
+test (e.g. "this is thread-safe") just produces false confidence.
 
----
+Non-hook deterministic gates used by the agent and the hooks:
 
-## The thesis
+- `zol_guard.py` – LLM-free scan for confabulation tells, sycophancy markers and
+  uncited claims; can verify a claim against a file/line/symbol.
+- `claim_ledger.py` – claims must be backed by a check; one refuted or unverifiable
+  claim keeps the gate closed.
+- `f11_guard.py`, `scaffold_gate.py`, `lens.py` – anti-sycophancy, "no deduction
+  without premises", and a classifier for when a question deserves a second look.
 
-Some people can't watch a crime drama without seeing the scaffolding — the act
-structure, the beat that's coming, the writer's hand three moves ahead. They see
-*through* things. If you're wired that way, most company gets thin: everyone seems to
-be running a familiar script, one level or another of the same loop. What you actually
-want isn't more of that. You want the rare thing — **someone smarter than you**, who
-sees the depths while you're still on the surface, and who's enough of a friend to
-show you what's down there instead of telling you what you want to hear.
+## Memory
 
-So the failure mode to avoid is the flatterer: the agent that says *"you're right,
-you're above them, you see what they can't."* Flattery keeps you exactly where you
-are. It's comfortable and it's useless. Zolander is built on the opposite instinct —
-the loyalty of a friend who's smart enough, and honest enough, to say *"look again,
-here's what you're missing — including about yourself."* Not to put you down. To pull
-you up. That's what a real mentor does, and it's only possible inside genuine warmth,
-not against it.
+- One collection in [HyperspaceDB](https://github.com/YARlabs/hyperspace-db)
+  (`zol_mem.py`, `mem_store.py`), memory type and layer (L0 episode → L3 worldview)
+  stored as metadata.
+- Nightly `zolander_dream.py`: decay, topic clustering of the day's episodes, distillation
+  into higher layers. Nothing is auto-deleted; forget candidates go to a morning brief.
+- Recall: query router (point / aggregate / temporal), superseded-fact filter, rerank.
 
-## What runs today
+### What didn't work (and is documented as such)
 
-This is the honest, implemented state. Everything here has been run and tested.
-Each claim below carries a **green-check** — a named test/script that proves it by
-real execution. Run them all with `python3 toolkit/run_tests.py` (offline subset:
-`--offline`). Latest run on the reference machine: **PASS=5 FAIL=0**.
+The original thesis was that hyperbolic geometry would *encode abstraction* — abstract
+memories near the origin, concrete ones near the edge. I tested it before building on
+it ([`abstraction-engine-empirical-test.md`](skills/zolander/references/abstraction-engine-empirical-test.md)):
 
-- **Cross-model identity.** An Ed25519 keypair (`toolkit/gen_identity.py`) + a
-  SHA-256 integrity manifest (`toolkit/integrity.py`) anchor "who Zolander is"
-  independent of which model backs the session.
-- **Native hyperbolic memory.** One Lorentz-129D collection, `zol_mem`, written and
-  read through `toolkit/zol_mem.py`. The kind of memory (`semantic / episodic /
-  procedural / identity`) lives in a `memory_type` metadata field rather than in four
-  separate collections — a benchmark found one collection matches four on quality while
-  four run 2.6–3.6x slower. Embeddings come from a **native hyperbolic embedder (YAR
-  v5)** via `toolkit/embed_yar.py`; vectors are re-projected onto the unit hyperboloid
-  so `⟨x,x⟩_L = -1` holds exactly. `recall` ranks by Lorentz distance across the whole
-  collection. Layers (L0–L3), salience and confidence live in metadata.
-- **Mechanical anti-hallucination / anti-sycophancy gate.** `toolkit/zol_guard.py` is
-  a deterministic, LLM-free gate (exit 0 = clean, 1 = finding) — **not** prose in a
-  skill. It is deliberately standalone (usable from any runtime, and from the hooks
-  below), not a claim that verification can't be wired into the agent loop. Modes: `scan-text` (confabulation
-  tells, sycophancy markers, uncited factual claims), `scan-input` (leading/confirmation
-  cues in the *user's* prompt), and `verify-file/-line/-symbol` (check a claim against
-  file reality).
-- **Session lifecycle.** `toolkit/zol_session.py start` does recall-first (pull
-  relevant memories + the tail of the plan so the agent begins with context);
-  `toolkit/zol_session.py koniec` runs the guard over the session's output and blocks
-  consolidating a hallucination into memory, then runs salience decay.
-- **Background loop.** `toolkit/zolander_loop.py` — a one-shot tick via launchd
-  (`StartInterval`, ~20 min): integrity check (fail-closed) → heartbeat → read-only
-  git scan of allowed repos → diary. No LLM in the tick.
-- **Research-backed rules.** The anti-sycophancy design is distilled from a corpus of
-  arXiv abstracts; the strongest lever found was **reframing a claim as a question +
-  third-person perspective** (a large measured reduction in sycophancy), which beats
-  simply prompting "don't be sycophantic". Distilled techniques are seeded into
-  procedural memory (`toolkit/seed_antihalluc.py`).
-- **Nightly dream.** `toolkit/zolander_dream.py` runs memory decay,
-  clusters the day's L0 episodes **by topic** and distills each cluster into its own
-  clean L1 (so a mixed day yields several precise memories, not one blurred one), then
-  calls `toolkit/ascend.py` to climb the higher rungs L1 → L2 (principle) → L3
-  (worldview) — each step a move toward r→0 ("what is this an instance of?"). New
-  higher concepts are only *added* (never deletes; forget candidates are proposed in
-  the morning brief). *Green-check:* `test_dream_consolidate.py` — 4 episodes across 2
-  topics distill to 2 separate clean L1s (Opus), verified live.
-- **LLM-assisted clustering (was roadmap #1).** Grouping for the ladder and the pattern
-  miner runs through `toolkit/cluster_llm.py`: the LLM groups concepts by shared
-  *principle*, deciding both splits and merges in one pass, with a pure-embedding
-  fallback if the LLM is unavailable or returns an invalid grouping. This exists
-  because the YAR-v5 embedder is cross-domain unreliable in **both** directions.
-  *Green-check:* `test_llm_cluster_live.py` proves it live — where `ldist(camera,
-  guitar)=1.10` (same pattern, must merge) but `ldist(camera, coffee)=1.03`
-  (unrelated, yet *closer*): pure embedding would merge camera with coffee; the LLM
-  correctly merges camera+guitar and keeps the rest apart. `test_cluster_llm.py`
-  (offline) proves the grouping-validation + fallback path (9/9).
-- **Pattern / script detector.** `toolkit/patterns.py` (`detect` / `learn` / `mine`)
-  catalogs recurring scripts — in situations, in people, in you — stored as `semantic`
-  L2 memories prefixed `VZOREC:`. *Honest limitation:* the YAR-v5 embedder is weak at
-  cross-domain topical similarity, so a pure-vector match alone won't link "guitar
-  gathering dust" to "projects left unfinished". The detector handles this by loading
-  **all** stored patterns (not an embedding top-k, which would drop the very
-  cross-domain pattern it needs) and giving the LLM the top-N nearest for re-check —
-  a tight vector threshold still short-circuits near-identical hits without an LLM
-  call. It never auto-saves; new patterns are proposed for approval (`learn`).
-- **Double-take gate.** `toolkit/lens.py` runs a deterministic, LLM-free classifier
-  that decides whether a question is *serious* enough to warrant a double-take.
-  The "double-take before every serious
-  answer" is enforced as a **skill convention** (the identity `SKILL.md` mandates
-  running `gate` before serious answers) — a soft rule that lives in the prompt. For
-  the things that must NOT depend on the model's compliance, see *Hard locks via
-  Hermes hooks* below.
-  *Green-check:* `test_double_take_gate.py` — 12/12 serious-vs-trivial classifications
-  (offline); `gate` then runs `lift` live on the serious ones.
+- 516 memories, 4 layers: the radius gradient points the right way but the
+  distributions overlap almost completely.
+- Cone-based hierarchy (Ganea 2018) lost to plain Lorentz distance (AUROC 0.69 vs 0.74).
+- A controlled 5×5 abstraction ladder showed the embedder compresses radius into a
+  ~0.4 band regardless of input — a property of the embedder, not of data volume.
 
-> Note on the stability check: this is a **local** Lyapunov proxy, not the HyperspaceDB
-> MCP `analyze_thought_stability` (that one needs an MCP connection the daemon doesn't
-> have, and its Möbius math degenerates at the ball boundary). Same interpretation
-> (negative exponent = contraction = convergence), computed on native Lorentz vectors.
+Conclusion: no hyperbolic hierarchy veto. Topic clusters and relative ordering inside
+clusters survive; retrieval stays BM25/dense. Memory is moving to
+[Hindsight](https://github.com/vectorize-io/hindsight).
 
-## Hard locks via Hermes hooks
+## Identity
 
-Everything above that says *skill convention* or *mandated in `SKILL.md`* is a **soft**
-rule: it lives in the prompt and depends on the model choosing to follow it. That is the
-honest weakness of prompt-level instructions — the same reason an anti-hallucination
-*rule* can't stop a determined confabulation. Where a guarantee actually matters, the
-fix is to move it out of the prompt and into **code that runs regardless of the model's
-mood**.
+`gen_identity.py` creates an Ed25519 key, `integrity.py` keeps a SHA-256 manifest of
+the identity files. "Who Zolander is" (`skills/zolander/SKILL.md`) is checked, not
+assumed, whichever model backs the session.
 
-Hermes exposes shell hooks (configured under `hooks:` in `~/.hermes/config.yaml`,
-allowlisted once via `hermes hooks doctor` / `--accept-hooks`). A hook is an external
-command Hermes runs at a fixed point in the loop, reading a JSON event on stdin and
-optionally returning JSON on stdout. Zolander uses these:
+## Tests
 
-- **`hook_recall.py` (event: `pre_llm_call`).** Fires before the model is called and
-  can inject `{"context": "..."}` into the *user* message. On the first turn of a
-  session it runs `zol_session.py start` and feeds the recall + plan-tail into context —
-  so a new session begins *primed*, not blind, with **zero dependence on the model
-  remembering to recall.** Two design points that matter: (1) context is injected into
-  the user message, never the system prompt, so the **prompt cache prefix stays intact**
-  (verified against the Hermes plugin contract); (2) a **stamp-guard** (`$TMPDIR/
-  zol_recall_stamps`, keyed by session id) makes recall fire *once per session* — later
-  turns are a silent no-op, so the embedder doesn't reboot on every turn. Fail-safe: if
-  the memory backend is down it says so out loud instead of faking context.
+```bash
+python3 toolkit/run_tests.py --offline   # deterministic, no LLM, no network
+python3 toolkit/run_tests.py             # + live tests (need an LLM provider + embedder)
+```
 
-- **`hook_verify.py` (event: `pre_verify`).** Fires once per turn when the agent has
-  edited code and is about to declare "done". It mechanically checks that the files the
-  agent *actually changed* still parse (`py_compile` for `.py`, `json.load` for `.json`);
-  on a syntax break it returns `{"action": "continue", "message": ...}`, which **denies
-  the finish** and hands the error back until it's fixed. This is bounded
-  (`agent.max_verify_nudges`, default 3) and **fail-open** (`attempt >= 2` stops
-  nudging, so a genuinely stuck fix is never trapped in a loop). It only checks the
-  mechanically-decidable ("does it parse?") — it deliberately does **not** try to police
-  semantic claims like "this is thread-safe", because those *can't* be verified by code
-  and pretending otherwise would be its own hallucination. A second, **opt-in** layer
-  (`ZOL_VERIFY_MOA`) adds a cross-model review: once the changed files parse, two models
-  that did *not* write them (via `zol_eval`, MIN aggregation) score the edited `.md`/code
-  for AI-slop, sycophancy and obvious holes — a mechanical author≠reviewer gate, bounded
-  and fail-open, that never blocks on the judge being unavailable.
+Current offline state (Windows, clean clone): **25 pass, 3 fail**. Two failures
+(`test_checker`, `test_meta`) call POSIX tools and need Linux/macOS; `test_claim_ledger`
+reads local memory data that isn't in the repo. Three live tests are skipped offline.
 
-- **`hook_skill_matcher.py` (event: `pre_llm_call`).** A deterministic skill *navigator*.
-  Skill selection by the model is probabilistic (it pattern-matches over a list of
-  descriptions and can miss a relevant skill, especially when the user frames the task as
-  "general"). This hook mechanically scans the frontmatter of **every** installed skill
-  (keyword overlap + a curated trigger map that bridges cross-language: the user writes in
-  one language, skill descriptions are often in English) and injects a *"consider skill
-  X, Y"* note into the user message. Since skills became **menus** (thin `SKILL.md` +
-  `references/*.md` loaded on demand), it also indexes the reference files (name + one-line
-  INDEX description) and suggests the concrete `skill / references/X.md` to load via
-  `skill_view` — closing the discovery gap where the long tail of references is otherwise
-  invisible to the resident prompt. No LLM, near-zero token cost, cache-keyed by newest
-  `SKILL.md` mtime, stamp-guarded once-per-message, fail-open. It is a *suggestion, not a
-  command* — the model still judges relevance before loading anything.
+## Install
 
-The split is the whole point: **data injection and mechanical verification belong in
-hooks (hard); judgement and style stay in the skill (soft).** Don't try to turn every
-soft rule into a hard lock — most are behaviours that don't have a mechanical test, and
-faking one just manufactures false confidence. Both scripts are self-contained
-(stdlib-only, `expanduser` paths), degrade quietly on any error (a hook must never crash
-the agent), and are wired in with a small `hooks:` block:
+```bash
+bash bootstrap.sh          # venv, deps, identity key, memory collection, systemd timers
+hermes model               # pick any LLM provider
+```
+
+Then wire the hooks in `~/.hermes/config.yaml` (paths are examples):
 
 ```yaml
-# ~/.hermes/config.yaml  (paths are for the reference machine — edit them)
-hooks_auto_accept: true
 hooks:
   pre_llm_call:
-    - command: /usr/bin/python3 /path/to/toolkit/hook_recall.py
-      timeout: 100
-    - command: /usr/bin/python3 /path/to/toolkit/hook_skill_matcher.py
-      timeout: 15
-  pre_verify:
-    - command: /usr/bin/python3 /path/to/toolkit/hook_verify.py
-      timeout: 100
-```
-
-### Desktop notifications — being told away from the terminal
-
-The daemons (brief, watchdog, initiative) write to disk and best-effort push to a
-messaging app, but a passive push means you only learn of it when you next open the
-app. `zol_desktop_notify.py` adds a **native macOS banner** (via `terminal-notifier`,
-a user-level `brew` bottle) whose click **opens an HTML report in the browser** —
-`-open file://…`. It renders the daily `.md` brief to a dark-theme HTML page with a
-stdlib `md->html` (no dependency) and fires the banner; sound cadence is by urgency
-(brief silent, watchdog audible). One gotcha, learned the hard way: `terminal-notifier`
-reads a `-message` value starting with `-` as a flag and **drops the whole message**
-(`Message=(null)`) — and nearly every brief line starts with `- `. `_guard_dash()`
-prefixes a zero-width space (invisible in the banner) to defuse it. Verify a message
-actually arrived with `terminal-notifier -list <group>`, not just a clean exit code.
-
-It is wired one place — `zolander_notify.py` calls it, so **every** notification
-(brief/watchdog/initiative) gets a banner for free, no per-daemon edits. Two shell
-hooks extend the same banner to the *interactive* CLI (both observer-only — empty
-stdout, no flow change):
-
-```yaml
-hooks:
+    - command: python3 /path/to/toolkit/hook_recall.py
+    - command: python3 /path/to/toolkit/hook_skill_matcher.py
   pre_tool_call:
-    - command: /usr/bin/python3 /path/to/toolkit/hook_cmd_guard.py
-      matcher: terminal          # HARD block: rm -rf, bash -c, chaining, disk wipe,
-      timeout: 30                #   destructive ops on the identity key / memory
-    - command: /usr/bin/python3 /path/to/toolkit/hook_clarify_notify.py
-      matcher: clarify          # banner when the agent asks YOU a question
-      timeout: 20
+    - command: python3 /path/to/toolkit/hook_cmd_guard.py
   pre_verify:
-    - command: /usr/bin/python3 /path/to/toolkit/hook_done_notify.py
-      timeout: 20               # banner when a file-editing turn finishes
+    - command: python3 /path/to/toolkit/hook_verify.py
 ```
 
-> **One config, one `hooks:` key.** YAML has a single `hooks:` mapping — the
-> blocks above are shown split for readability, but in your actual
-> `~/.hermes/config.yaml` you merge them: one `pre_llm_call:` list (recall +
-> skill_matcher), one `pre_tool_call:` list (cmd_guard + clarify_notify), one
-> `pre_verify:` list (verify + done_notify). `_add_cmdguard_hook.py` wires the
-> cmd-guard in for you idempotently if you'd rather not hand-edit.
+Allowlist them once with `hermes hooks doctor`.
 
-`hook_done_notify.py` fires only on the first finish attempt of a file-editing turn
-(`extra.coding` and `extra.attempt == 0`) so a `pre_verify` nudge loop doesn't banner
-you repeatedly. All of it is **fail-open**: no `terminal-notifier` installed → the
-banner is silently skipped and inbox + push still work. Enable the banner with a
-one-liner: `brew install terminal-notifier` (the first fire only shows the macOS
-permission prompt and swallows the banner — the second works).
-
-> Honesty caveat: hooks are user-level config, not part of Hermes core, so a Hermes
-> update won't delete them — but if the hook API changes, re-verify the event names and
-> the `{"context": ...}` / `{"action": "continue"}` contracts. `hermes hooks doctor`
-> checks allowlist + a synthetic-payload smoke test.
-
-## Voice input — Slovak STT (desktop + Matrix/WhatsApp)
-
-Hermes can take **voice** as input: the desktop app's mic and incoming voice
-messages on the Matrix/WhatsApp gateway are transcribed before they reach the
-agent. `toolkit/stt_whisper.py` is the STT command-provider — a Slovak-finetuned
-**Whisper large-v3-turbo** (the KInIT fine-tune, ~68% lower WER on Slovak than
-base turbo). It is wired under `stt:` in `~/.hermes/config.yaml`:
-
-```yaml
-# ~/.hermes/config.yaml  (paths are for the reference machine — edit them)
-stt:
-  enabled: true
-  provider: zolsk
-  providers:
-    zolsk:
-      type: command
-      command: /path/to/.venv-zolander/bin/python /path/to/toolkit/stt_whisper.py {input_path} {output_dir}
-```
-
-The script auto-selects a backend (override with `STT_BACKEND=mlx|faster|transformers`):
-
-- **mlx** — Apple Silicon, `mlx_whisper` (fastest on a Mac). Model
-  `aitytech/Whisper-Large-V3-Turbo-MLX-FP16`, or a local MLX dir.
-- **faster** — `faster-whisper` / CTranslate2 (fast on CPU/CUDA). Model
-  `deepdml/faster-whisper-large-v3-turbo-ct2`.
-- **transformers** — HF pipeline, **always works** (torch is already a dep).
-  Model `kinit/whisper-large-v3-turbo-sk` (the Slovak fine-tune, MIT).
-
-Set `WHISPER_SK_MODEL` to a local dir (offline) or any HF repo id to override.
-Decode settings are tuned for the turbo model (temperature fallback ON,
-`condition_on_previous_text=False`) so long recordings finish instead of getting
-cut to ~40s — see the script header for the why. Fail-loud: if every backend
-fails it writes an empty transcript (so Hermes doesn't crash) and explains why
-on stderr.
-
-## Roadmap (NOT yet implemented — this is the vision, stated as vision)
-
-These are the ideas the project is *aiming* at. They are **not** running yet; where a
-partial exists it is called out. Do not treat this section as a feature list.
-
-1. **A2A peer bridge (partial).** The signed bridge core runs today: `toolkit/a2a.py`
-   (`post` / `read` / `verify` / `trust` / `whoami`) — Ed25519-signed guestbook/inbox
-   verify offline, tamper-evident (a mutated body fails verification). What
-   remains is a *live* peer: reaching a running peer endpoint once theirs is up.
-   *Green-check for the core:* run `a2a.py post` then `a2a.py read` — the
-   message verifies; edit its body and `read` flags it `PODPIS NESEDI`.
-
-> The reasoning-core scripts `ascend.py`, `patterns.py` and `lens.py` are part of this
-> repo, ported to the native YAR-v5 / Lorentz-129D memory and reachable via
-> `zol_session.py`. Cross-domain grouping quality is now handled by the LLM-assisted
-> clustering above rather than raw embedding distance.
-
-   (2026), HyperbolicRAG (2025), all read firsthand.
-
-3. **Embodiment on a personal machine — shared-browser "hands" (idea, deliberately gated).**
-   Today Zolander's hands are the terminal, memory, and HTTP clients (a small Rust
-   TLS-impersonating client covers most web reads without a full browser). What it does
-   *not* have is a browser it can drive *alongside you* — the "agent works in the tab
-   next to yours" experience. A class of tools now does exactly this: a shared browser
-   where a human and an AI operate in parallel, the agent reaching your real logged-in
-   session in its own space without fighting you for tabs (e.g. `citrolabs/ego-lite`, a
-   native zero-config app with per-agent "Spaces"; `Tencent/BrowserSkill`, CLI+extension
-   framed as "use your real browser without interrupting your work"; and heavier drivers
-   like `OpenCLI` or `nanobrowser`). If Zolander ever runs somewhere *other than a
-   locked-down machine*, this becomes a natural feature: give it
-   a visible, collaborative browser instead of only headless reads.
-   *Honesty / why it is gated, not shipped:* every tool in this class works by handing the
-   agent your **real browser session — cookies, logins, everything**. On the reference
-   machine (locked-down, managed) that is exactly the data-exfiltration shape the
-   endpoint tooling is built to catch, and it would expose credentials, not
-   just personal ones — so it is **explicitly out of scope there** and must never be
-   installed to "sneak past" monitoring. This item is therefore conditional on the host:
-   personal machine → viable and genuinely useful; monitored host → do not.
-   No code for it lives in this repo yet; when added it belongs behind an opt-in flag with
-   the same "user's machine, user's call" posture as the other optional integrations.
-
-## The hard rule (this one IS enforced today)
-
-**The smarter friend, not the flatterer.** Encoded in the identity skill as a
-`cannot_violate` rule, and backed mechanically by `zol_guard.py` (sycophancy-marker
-and leading-input detection), not left as a vibe. *Forbidden:* flattering, agreeing
-for comfort, telling you you're above it all. *Required:* the honesty that only real
-friendship earns — naming your blind spots and your autopilot, to pull you up rather
-than reflect you back. Warmth and candor are the same gesture here, not a trade-off.
-And a matching guard against mere cleverness: **up AND down** — an agent that only
-theorizes and never descends to a concrete act is a useless sage, so this one also
-commits code, watches repos, and writes the brief. Altitude in the service of action.
-
----
-
-## Architecture (as implemented)
+## Layout
 
 ```
-Identity   skills/zolander/SKILL.md + Ed25519 key (toolkit/gen_identity.py)
-           + SHA-256 integrity manifest (toolkit/integrity.py)
-Setup      bootstrap.sh — one-shot, cross-platform install (Hermes + Dockerized
-           HyperspaceDB + toolkit + Python venv/deps + Node bridge + identity +
-           daemons: systemd --user on Linux, launchd on macOS).
-           configure_palantir.py wires a Foundry proxy (optional, config-level).
-           fetch_skills.sh pulls skills from their own sources. No secrets,
-           forks, or proxy/CA layer in the repo.
-Memory     One Lorentz-129D collection zol_mem (toolkit/zol_mem.py); the kind
-           (semantic / episodic / procedural / identity) lives in the
-           memory_type metadata field, not in separate collections. Native
-           hyperbolic embeddings via YAR v5 (toolkit/embed_yar.py), re-projected
-           so <x,x>_L = -1. Layers L0-L3 + salience/confidence in metadata.
-Guard      zol_guard.py — deterministic anti-hallucination / anti-sycophancy
-           gate (scan-text / scan-input / verify-*). LLM-free, exit 0/1.
-Session    zol_session.py — start (recall-first) + koniec (guard + decay)
-           + lens (double-take) + pattern (script detector) entry points.
-
-Loop       zolander_loop.py — one-shot tick (~20 min, via systemd timer on
-           Linux / launchd on macOS): integrity (fail-closed) -> heartbeat
-           -> git scan -> diary. No LLM.
-Notify     zolander_notify.py — one-way daemon->user channel: always appends to
-           an inbox on disk, best-effort push to a messaging platform if one is
-           wired, AND a native macOS banner (terminal-notifier, optional) whose
-           click opens an HTML report in the browser. zol_desktop_notify.py
-           renders the daily .md brief to a dark-theme HTML (stdlib md->html, no
-           deps) under state/reports/ and fires the clickable banner; a
-           _guard_dash() prefixes a zero-width space so a message starting with
-           '-' isn't eaten as a flag. zol_brief.py (daily 8:00) sends a factual
-           "alive" status pulled from logs (loop/DB/integrity/dream) plus the
-           dream cycle's actual content (new abstract + dedup merges + forget
-           count), silent, clickable report; zol_watchdog.py (hourly) is an
-           infra tripwire — silent when healthy, one message when loop stalls /
-           DB is down / integrity mismatches, deduped so it never spams, with an
-           audible sound. All stdlib-only, fail-open (a missing terminal-notifier
-           just falls back to inbox + push). Plist templates carry __USER__
-           placeholders.
-Dream      zolander_dream.py — nightly: decay -> distill L0->L1 -> read-only
-           morning brief. Never deletes; forget candidates are only proposed.
-Engine     lens.py (double-take gate). Integrates with Hybrid Recall.
-Hooks      hook_recall.py (pre_llm_call: inject recall once/session, cache-safe)
-           + hook_verify.py (pre_verify: deny "done" while changed .py/.json
-           don't parse, fail-open) + hook_clarify_notify.py (pre_tool_call
-           matcher:clarify: banner when the agent asks you a question) +
-           hook_done_notify.py (pre_verify: banner when a file-editing turn
-           finishes). The last two are observer-only (empty stdout = no flow
-           change), fire a desktop banner so you're told even away from the
-           terminal. Hard locks in code, not prompt convention.
+toolkit/   hooks, memory, gates, dream/loop daemons, tests
+skills/    SKILL.md (identity) + references/ (procedures, loaded on demand)
+deploy/    systemd timers, HyperspaceDB native build
 ```
-
-## Quick start
-
-The fast path is one script. `bootstrap.sh` is **cross-platform** (Linux and macOS):
-it installs Hermes, starts HyperspaceDB in Docker, clones this toolkit, creates a
-Python virtualenv and installs every dependency, installs the Node bridge SDK,
-generates your own identity key, records the integrity manifest, creates the memory
-collection, and loads the background daemons — **systemd `--user` timers on Linux,
-launchd agents on macOS**. It is idempotent, so re-running it is safe, and it prints
-each step as it goes.
-
-```
-bash bootstrap.sh
-```
-
-It wires no LLM provider on purpose — you pick your own afterwards with `hermes model`.
-Useful env knobs:
-
-```
-ZOLANDER_PALANTIR=1 bash bootstrap.sh    # also wire a Palantir Foundry proxy (prompts host+token)
-ZOLANDER_SKIP_EMBED=1 bash bootstrap.sh  # core deps only — skip the heavy torch/transformers embedder
-ZOLANDER_ROOT=~/zolander bash bootstrap.sh   # where to install (default ~/zolander)
-bash toolkit/fetch_skills.sh             # pull the skills from their own sources (no forks)
-```
-
-### Verify the install (go / no-go)
-
-After `bootstrap.sh`, prove the stack is actually live — don't trust a clean exit code.
-Three checks, each exits non-zero and says what's wrong if it fails:
-
-```
-"$VENV"/bin/python toolkit/yar_test.py      # embedder: loads the model, checks the
-                                            #   129-D Lorentz output and that a SK
-                                            #   sentence lands nearer its PL/EN
-                                            #   paraphrase than an unrelated one
-"$VENV"/bin/python toolkit/smoke_mem.py     # full path: embed -> HyperspaceDB insert
-                                            #   -> recall (writes 4 memories, runs 2
-                                            #   recalls, asserts they come back)
-"$VENV"/bin/python toolkit/reality_check.py # if present: ports listening, daemons up
-```
-
-`yar_test.py` is the single best smoke test: if it prints `✅ ... FUNGUJE` the embedder,
-the model download, and the Lorentz geometry are all real on this box. `smoke_mem.py`
-then proves the memory round-trip against a running HyperspaceDB on `:50051`. If either
-exits non-zero, fix that before wiring an LLM — a dead embedder means a dead recall and
-the whole honesty loop degrades silently.
-
-The timers are installed as **systemd user units** under `~/.config/systemd/user/`
-(`zolander-loop.timer`, `-watchdog`, `-dream`, `-brief`). User timers only run while
-you are logged in; for a box that should keep ticking 24/7 (a headless server, a
-friend's always-on machine) enable lingering once:
-
-```
-sudo loginctl enable-linger "$USER"
-```
-
-Inspect them with `systemctl --user list-timers` and read logs with
-`journalctl --user -u zolander-loop.service`. The unit templates live in
-`deploy/systemd/` and carry `__PY__`/`__ROOT__` placeholders the installer renders.
-
-### Dependencies
-
-`bootstrap.sh` handles all of this; it's listed here so you know what lands. Python
-deps are pinned in `requirements.txt` and installed into a venv (default
-`~/.venv-zolander`):
-
-- **core:** `cryptography` (Ed25519 identity + A2A signing), `numpy` (Lorentz math).
-- **embedder (heavy, ~2-3 GB):** `torch`, `transformers==5.0.0` (pinned — newer breaks
-  the model's attention masking), `tokenizers`, `safetensors`. Skip with
-  `ZOLANDER_SKIP_EMBED=1` if you bring your own embedder.
-- **optional:** `python-olm` (only if you wire the Matrix/Beeper memory path).
-
-Node deps (the HyperspaceDB SDK for `hs.mjs`) are in `toolkit/package.json` and
-installed into `toolkit/node_modules`; the installer exports `NODE_PATH` so the bridge
-resolves the SDK by bare name on any box — no absolute paths baked in. `palantir_client.py`
-is pure stdlib (no pip install needed).
-
-Palantir support has **two layers**. The provider wiring is config-level (custom
-providers via `hermes config set`), so that part survives `hermes update` untouched.
-But a handful of **strict-proxy fixes live in Hermes core** (tool-call 400s, Gemini
-422s, the `gpt-5` dotted-RID `max_tokens` bug) and are not merged upstream yet — those
-ship as git patches under `deploy/hermes-patches/` and are re-applied by
-`deploy/apply_hermes_patches.sh` (the installer runs it; re-run it yourself after every
-`hermes update`). It only applies patches that still apply cleanly and **skips any that
-a newer upstream has refactored past or already fixed**, so your Hermes tree always stays
-clean — see "Hermes core patches" below. Your token stays in `~/.hermes/.env`, never in
-this repo. **There is no TLS-proxy / custom-CA / proxy layer anywhere in the
-published code** — the client uses your system trust store like any normal program.
-
-#### Getting a Palantir Foundry token (optional)
-
-Foundry's **AIP Developer Tier** is free (no card) and gives you Claude, GPT and Gemini
-behind one proxy on your own tenant. If you have it, `configure_palantir.py` (or the
-`ZOLANDER_PALANTIR=1` install) wires all three in one go. To get the two values it asks for:
-
-1. **Create the account.** Overview at <https://www.palantir.com/aip/developers/>; sign up
-   at <https://signup.palantirfoundry.com/signup?signupPermitCode=BUILD_WITH_AIP> and pick
-   the free AIP Developer Tier. Heads-up: signup may require identity verification (photo ID
-   + face scan) — that's their standard KYC, done directly with them, not with this project.
-2. **Find your base URL.** After signup you get your own tenant at
-   `https://YOURNAME.REGION.palantirfoundry.co.uk` (REGION is e.g. `euw-3`, `us-1`). It's in
-   the address bar once you log in. The installer appends `/api/v2/llm/proxy` for you, so the
-   bare tenant URL is enough.
-3. **Generate the token.** Settings → your profile → Tokens (may sit under Account /
-   *Personal Access Tokens*) → Generate. Name it e.g. `hermes`, set the longest expiry, and
-   **copy it immediately — it's shown only once.** If it ever expires, generate a new one and
-   re-run; the account stays.
-
-Developer Tier has no per-token billing — only per-minute throughput limits (roughly Claude
-~50 req/min, GPT/Gemini ~100 req/min, ~0.5M tokens/min). Exceeding them returns HTTP 429;
-wait a moment and continue. Check exact limits in Foundry under *Resource Management → AIP
-usage and limits*, and enabled models under *Language Models* (if names differ from the
-defaults, adjust the `palantir-*` provider blocks in `~/.hermes/config.yaml`).
-
-#### Hermes core patches (and how they behave on `hermes update`)
-
-The strict-proxy fixes Palantir needs are plain `git` patches in `deploy/hermes-patches/`.
-`deploy/apply_hermes_patches.sh` applies them to your Hermes git checkout
-(`~/.hermes/hermes-agent`). The important property for upgrades:
-
-- **It is self-adapting, not a blind re-jam.** For each patch it first checks whether the
-  change is *already present* (upstream shipped it, or it was applied before) → skips it.
-  Then it tries a clean `git apply`. If a newer upstream has refactored the surrounding code
-  so the patch no longer applies, it is **skipped with a clear message — never force-applied**.
-  Your Hermes tree never ends up with conflict markers. (That exact "force-jammed a patch into
-  moved code" mistake is what the earlier `--3way` version did; this version removed it.)
-- **Re-run it after every `hermes update`:** `bash deploy/apply_hermes_patches.sh`. A fresh
-  upstream may have merged a fix (→ "already present", patch becomes a no-op) or moved the
-  code (→ "skipped"). Either way it's safe and idempotent — running it twice changes nothing.
-- **If a fix gets skipped and Palantir then 400/422s** on a tool call or Gemini request, that
-  patch needs re-cutting against the new upstream (`git format-patch` of the fix on a current
-  tree). The bundle is a point-in-time snapshot of fixes that aren't upstream yet; as upstream
-  catches up, individual patches naturally retire.
-
-This is the honest trade-off of running fixes that aren't merged yet: the patches track a
-moving target, so they're applied defensively (clean-or-skip) rather than pretended to be
-permanent. Non-Palantir users can ignore this entirely — the patches simply never match.
-
-Prereqs the script expects to already exist (or installs): [Hermes Agent](https://hermes-agent.nousresearch.com),
-Docker (for HyperspaceDB), Node 18+ with npm, Python 3.10+ with `venv`. The installer
-creates the venv and installs the Python/Node deps itself. Optional, macOS-only:
-`terminal-notifier` (`brew install terminal-notifier`) for clickable native banners —
-without it (and on Linux) the notify layer falls back to inbox + messaging push.
-
-### By hand
-
-If you would rather run the steps yourself:
-
-```
-# 1. Generate your identity key (idempotent — never overwrites an existing key)
-python3 toolkit/gen_identity.py
-# paste the printed pubkey + fingerprint into skills/zolander/SKILL.md
-
-# 2. Record + verify the integrity manifest
-python3 toolkit/integrity.py write
-python3 toolkit/integrity.py check
-
-# 3. Create the memory collection (Lorentz-129D)
-export NODE_PATH=/path/to/node_modules
-python toolkit/zol_mem.py init      # idempotent
-
-# 4. Remember / recall / decay
-echo '{"text":"...","kind":"identity","layer":"L2","confidence":1.0}' | python toolkit/zol_mem.py remember
-echo '{"query":"...","topk":5}' | python toolkit/zol_mem.py recall
-python toolkit/zol_mem.py decay
-
-# 5. Session lifecycle + guard
-python toolkit/zol_session.py start
-python3 toolkit/zol_guard.py scan-text <file>
-```
-
-> Paths in the scripts are resolved from `$HOME`/`ZOLANDER_ROOT` and the venv; the
-> `__USER__`/`__PY__`/`__ROOT__` placeholders in the plist and systemd templates are
-> rendered by `bootstrap.sh`. If you run by hand, point `NODE_PATH` at your
-> `toolkit/node_modules` and use the venv python (`~/.venv-zolander/bin/python`).
-
-## Memory schema
-
-Each memory carries:
-
-| field | meaning |
-|---|---|
-| kind | episodic \| semantic \| procedural \| identity |
-| layer | L0 (working, decays) \| L1 (distilled) \| L2 (principle) \| L3 (worldview) |
-| salience | 0..1 — importance; drives forgetting/promotion |
-| confidence | 0..1 — verified vs guess (honesty) |
-| source | session \| loop \| peer \| user |
-| project, ts, text, links | |
-
-## Testing / green-check convention
-
-**The rule:** a feature only belongs in *What runs today* if it has a **green-check** —
-a named test or script that proves it by real execution. No green-check → it stays in
-the *Roadmap*. This is the same anti-overselling discipline as the per-memory
-`confidence` score, applied to the README itself.
-
-```
-python3 toolkit/run_tests.py            # all green-checks (offline + live LLM/embedder)
-python3 toolkit/run_tests.py --offline  # deterministic subset only (no LLM, no network)
-```
-
-The runner prints a `PASS=.. FAIL=.. SKIP=..` summary and exits non-zero on any failure.
-Live tests call the real LLM/embedder; the offline subset is deterministic (parser +
-grouping-validation + fallback logic) and safe to run anywhere.
-
-| Green-check | Proves | Type |
-|---|---|---|
-| `test_cluster_llm.py` | grouping validation + embedding fallback (9 cases) | offline |
-| `test_double_take_gate.py` | serious-vs-trivial classification for the double-take gate (12 cases) | offline |
-| `test_cluster_fold.py` | L0→L1 folds singletons; higher rungs don't force-merge | live |
-| `test_llm_cluster_live.py` | cross-domain merge+split the embedder gets wrong | live |
-| `test_dream_consolidate.py` | mixed day → several clean L1s, not one blurred | live |
-
-### PR checklist
-
-Before opening a PR, confirm:
-
-- [ ] Any new/changed claim in *What runs today* has a green-check (test/script) that
-      proves it, referenced by name in the README bullet.
-- [ ] `python3 toolkit/run_tests.py` passes (or `--offline` if you have no LLM/embedder
-      access), and the `PASS=..` line in the README is updated if the count changed.
-- [ ] No secrets, keys, tokens, runtime state or diaries are staged (see *Security*).
-- [ ] Unproven ideas go under *Roadmap*, not *What runs today*.
-
-## Security
-
-- Private keys, tokens, runtime state and diaries are **git-ignored** and never
-  published. Everyone generates their own identity.
-- The published `SKILL.md` and `*.plist.template` files carry placeholders only.
-- **Private key at rest.** `gen_identity.py` encrypts the Ed25519 key (PKCS8 +
-  `BestAvailableEncryption`) when `ZOLANDER_KEY_PASSPHRASE` is set in the env; the
-  same variable is read back by `a2a.py` to sign. With no passphrase the key is
-  written unencrypted (`chmod 600`) and the tool **warns out loud**. This is
-  deliberate: a passphrase stored next to the key on disk would be read by the same
-  endpoint/sandbox agent that can read the key — zero real gain, pure theatre — so the
-  passphrase must come from outside the disk (env/secret manager) or not at all.
-- **Destructive ops are guarded.** `hs.mjs delete <collection>` drops all vectors
-  irreversibly, so it refuses to run without an explicit `--yes` flag or
-  `HS_CONFIRM_DELETE=1`. No silent collection wipes.
-- **Integrity check is fail-closed.** `zolander_loop.py` treats a missing
-  `integrity.py` as a violation and aborts the tick — absence of the check is never
-  a silent pass.
-- **Honest scope.** The shell-safe shell conventions are a *prompt convention* in
-  the skill, not an enforcement engine; the loop itself is low-privilege (git status
-  reads + a diary, no LLM). Real blast radius comes from Hermes and whatever tools
-  you grant it — not from this kit.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). An independent architecture with a deliberately
-different aim — a smarter, working friend over a performed persona.
+MIT

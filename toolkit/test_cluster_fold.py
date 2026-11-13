@@ -3,7 +3,7 @@
 Realne data: id 4,5,6 (L0 epizody, roznorode) vs id 9,10 (L2 principy, nesuvisiace).
 Overuje: L0 (fold=True) -> zliaty do 1 skupiny; L2 (fold=False) -> ostanu 2 singletony."""
 import os, sys
-ROOT = os.path.expanduser("~/zolander")
+ROOT = os.path.expanduser("~/projects/zolander")
 sys.path.insert(0, os.path.join(ROOT, "toolkit"))
 from ascend import load_index, cluster
 
