@@ -175,7 +175,6 @@ reasoning engine (gate/lens/pattern, ascend, abstrakčný stroj) v runbooku.
 - `public-repo-push-sanitization.md` — dvojitá brána push + sanit, scrub, full sync.
 - `monetization-ideation.md` — F11 postup na monetizačné/scam nápady.
 - `watchdog-infoziadost-notify.md` — watchdog SVP/TURVOD + terminal-notifier desktop notifikácie.
-- `starnet-station-wiring.md` — StarNet stanica (8799) na Palantir Opus cez gate: launcher, DEV fast-path (connect-screen fix), workspace pasca, roster/tim, connect hodnoty.
 
 ## Plán a stav
 Celý plán, fázy a rozhodnutia: ~/projects/zolander/PLAN.md. Pri práci na Zolanderovi vždy

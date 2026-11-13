@@ -37,7 +37,7 @@ hermes toolkit.
   revizia. Nie je to MoA cross-model review (to je tiez faz 2).
 - Daemony (loop, dream, brief, watchdog, notify) su hermes/macOS veci a TU NIE SU.
   Windows Scheduled Tasks nahradenie je faz 2.
-- Palantir, Matrix/WhatsApp gateway, desktop bannery — neportujeme (repo ich
+- Matrix/WhatsApp gateway, desktop bannery — neportujeme (repo ich
   popisuje: zavisi na prostredi, ktore tu nie je).
 
 ## Prevadzka v praxi (co robis kazdy den)

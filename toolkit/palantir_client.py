@@ -15,7 +15,6 @@ Configure (any one of):
   - export PALANTIR_HOST=myorg.euw-3.palantirfoundry.co.uk   (bare tenant host)
     or  PALANTIR_BASE=https://.../api/v2/llm/proxy           (full base, wins)
   - export PALANTIR_TOKEN=...        (or put PALANTIR_TOKEN=... in ~/.hermes/.env)
-  `configure_palantir.py` writes both for you and wires Hermes providers too.
 
 Use as a module:
   from palantir_client import chat
@@ -43,8 +42,8 @@ def _base():
         host = _from_hermes_env("PALANTIR_HOST")
     if not host:
         raise RuntimeError(
-            "PALANTIR_HOST (or PALANTIR_BASE) not set. Run configure_palantir.py "
-            "or `export PALANTIR_HOST=yourtenant.region.palantirfoundry.co.uk`."
+            "PALANTIR_HOST (or PALANTIR_BASE) not set. "
+            "Run `export PALANTIR_HOST=yourtenant.region.palantirfoundry.co.uk`."
         )
     host = host.replace("https://", "").replace("http://", "").rstrip("/")
     return f"https://{host}{PROXY_PATH}"
@@ -173,7 +172,7 @@ def chat(prompt, model="opus", max_tokens=2000, system=None, max_retries=6,
         headers = {"Authorization": f"Bearer {_TOK}", "Content-Type": "application/json"}
 
     if not is_openrouter and not _TOK:
-        raise RuntimeError("PALANTIR_TOKEN not set — run configure_palantir.py or export it.")
+        raise RuntimeError("PALANTIR_TOKEN not set — export it or put it in ~/.hermes/.env.")
 
     body = json.dumps(payload).encode()
     for attempt in range(max_retries):
@@ -229,7 +228,7 @@ def chat_vision(prompt, image_b64, media_type="image/jpeg", model="opus",
     if not ("anthropic" in mid or model in ("opus", "sonnet")):
         mid = MODELS["opus"]
     if not _TOK:
-        raise RuntimeError("PALANTIR_TOKEN not set — run configure_palantir.py or export it.")
+        raise RuntimeError("PALANTIR_TOKEN not set — export it or put it in ~/.hermes/.env.")
     url = _base() + "/anthropic/v1/messages"
     content = [
         {"type": "image", "source": {"type": "base64",

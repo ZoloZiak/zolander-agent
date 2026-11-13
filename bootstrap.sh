@@ -7,7 +7,7 @@
 #   collection -> background daemons (systemd --user on Linux, launchd on macOS).
 #
 # It wires NO LLM provider and NO secrets by default — you pick your model with
-# `hermes model` afterwards, or opt into the free Palantir Foundry proxy (step 6b).
+# `hermes model` afterwards.
 # There is NO TLS-proxy / custom-CA / proxy layer anywhere in here; it uses
 # your system trust store like any normal program.
 #
@@ -179,27 +179,6 @@ if [ -n "${NODE_PATH:-}" ] && have node; then
     || warn "collection init failed — is HyperspaceDB up (docker ps) and NODE_PATH set?"
 else
   warn "NODE_PATH/node not ready — create it later: NODE_PATH=$ROOT/toolkit/node_modules $PY $ROOT/toolkit/zol_mem.py init"
-fi
-
-# --- 6b. optional: Palantir Foundry LLM proxy -------------------------------
-# Foundry's free AIP Developer Tier exposes Claude/GPT/Gemini behind one proxy.
-# Opt in with ZOLANDER_PALANTIR=1 (+ PALANTIR_HOST + PALANTIR_TOKEN for non-interactive),
-# ZOLANDER_PALANTIR=0 to skip silently, or answer the prompt. Secrets go to
-# ~/.hermes/.env (0600), never this repo. No Palantir? Pick any provider with `hermes model`.
-say "6b/9 Optional LLM provider (Palantir Foundry)"
-do_palantir=0
-if [ "${ZOLANDER_PALANTIR:-}" = "1" ]; then do_palantir=1
-elif [ "${ZOLANDER_PALANTIR:-}" = "0" ]; then do_palantir=0
-elif [ -t 0 ]; then
-  read -r -p "  Wire a free Palantir Foundry LLM proxy now? [y/N] " _ans
-  case "$_ans" in [Yy]*) do_palantir=1 ;; esac
-fi
-if [ "$do_palantir" = "1" ]; then
-  step "configuring Palantir providers (prompts for host + token)"
-  "$PY" "$ROOT/toolkit/configure_palantir.py" || warn "Palantir wiring failed — re-run toolkit/configure_palantir.py"
-else
-  step "skipped — pick a model later with: hermes model"
-  step "  (or wire Palantir anytime: $PY $ROOT/toolkit/configure_palantir.py)"
 fi
 
 # --- 6c. skills from their own sources (no forks) ---------------------------

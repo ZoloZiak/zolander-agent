@@ -328,7 +328,7 @@ Detaily majú vlastné referencie / sekcie v `zolander-ai-companion`:
   ~/.hermes/.env, NIKDY do repa.
 - Verejný ZoloZiak/zolander-agent: `~/zolander-agent-repo` = staging (NIE živý ~/projects/
   zolander/). Remote cez SSH (git@github.com:ZoloZiak/zolander-agent.git). Inštalátor
-  bootstrap.sh + configure_palantir.py + fetch_skills.sh. Prenositeľné cesty: zol_paths.py
+  bootstrap.sh + fetch_skills.sh. Prenositeľné cesty: zol_paths.py
   (auto-detect). Po pushi VŽDY over raw fetchom z GitHubu. Detail push/sanit: `public-repo-push-sanitization.md`.
 
 ## Git / cmd_guard / sandbox pasce (OVERENÉ, oboje ma zdržali)

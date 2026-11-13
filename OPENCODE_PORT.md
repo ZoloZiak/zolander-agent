@@ -145,7 +145,7 @@
 4. **A2A peer vrstva (guestbook/inbox).** PODPIS pamati JE napojený (pozri
    vyššie); ostáva peer most (known_peers, spravy od iných agentov) —
    `toolkit/a2a.py` ho má, port nie je pripojený k peerom.
-5. **STT (slovenský Whisper), Matrix/WhatsApp gateway, Palantir, macOS banner** —
+5. **STT (slovenský Whisper), Matrix/WhatsApp gateway, macOS banner** —
    neportované; väčšina závisí na prostredie (korporát/macOS), nie na porte.
 
 ## Model poctivost (overené 2026-10-26)

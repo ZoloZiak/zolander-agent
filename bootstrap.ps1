@@ -9,7 +9,7 @@
   collection -> background daemons (Windows Task Scheduler).
 
   Wires NO LLM provider and NO secrets by default - pick your model with
-  `hermes model` afterwards, or opt into the Palantir Foundry proxy (step 6b).
+  `hermes model` afterwards.
 
   Idempotent - re-runs are safe.
 
@@ -24,7 +24,6 @@
 [CmdletBinding()]
 param(
   [switch]$SkipEmbed,
-  [switch]$Palantir,
   [switch]$HsDocker
 )
 
@@ -41,7 +40,6 @@ $HS_IMAGE = if ($env:HS_IMAGE) { $env:HS_IMAGE } else { 'glukhota/hyperspace-db'
 $HS_PORT  = if ($env:HS_PORT)  { $env:HS_PORT }  else { '50051' }
 $VENV     = if ($env:ZOLANDER_VENV) { $env:ZOLANDER_VENV } else { Join-Path $HOME '.venv-zolander' }
 if (-not $SkipEmbed -and $env:ZOLANDER_SKIP_EMBED -eq '1') { $SkipEmbed = $true }
-if (-not $Palantir  -and $env:ZOLANDER_PALANTIR  -eq '1') { $Palantir  = $true }
 if (-not $HsDocker  -and $env:ZOLANDER_HS_DOCKER  -eq '1') { $HsDocker  = $true }
 
 function Say  ($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
@@ -93,25 +91,6 @@ if (Test-Path (Join-Path $ROOT '.git')) {
 }
 foreach ($d in 'state','logs','denniky','identity') {
   New-Item -ItemType Directory -Force -Path (Join-Path $ROOT $d) | Out-Null
-}
-
-# --- 2b. Hermes core patches (Palantir strict-proxy fixes) ------------------
-# The .sh patcher (git apply) is POSIX-shaped; on Windows we point you at it via
-# git-bash if present. Harmless to skip if you don't use the Palantir proxy.
-$applyPatches = $null
-foreach ($d in $SELF_DIR, (Join-Path $ROOT 'deploy')) {
-  $cand = Join-Path $d 'apply_hermes_patches.sh'
-  if ($d -and (Test-Path $cand)) { $applyPatches = $cand; break }
-}
-if ($applyPatches) {
-  Say "2b/9 Hermes core patches (Palantir strict-proxy)"
-  if (Have bash) {
-    try { bash $applyPatches } catch { Warn "core patch step had issues - Palantir may 400/422; other providers unaffected" }
-  } else {
-    Warn "bash not found - run the patcher from git-bash: bash `"$applyPatches`" (or skip if not using Palantir)"
-  }
-} else {
-  Warn "deploy/apply_hermes_patches.sh not found - Palantir core fixes NOT applied"
 }
 
 # --- 3. Python venv + deps --------------------------------------------------
@@ -211,16 +190,6 @@ if ($env:NODE_PATH -and (Have node)) {
   try { & $PY (Join-Path $ROOT 'toolkit\zol_mem.py') init } catch { Warn "collection init failed - is HyperspaceDB up and NODE_PATH set?" }
 } else {
   Warn "NODE_PATH/node not ready - create it later: `$env:NODE_PATH='$ROOT\toolkit\node_modules'; $PY $ROOT\toolkit\zol_mem.py init"
-}
-
-# --- 6b. optional: Palantir Foundry LLM proxy -------------------------------
-Say "6b/9 Optional LLM provider (Palantir Foundry)"
-if ($Palantir) {
-  Step "configuring Palantir providers (prompts for host + token)"
-  try { & $PY (Join-Path $ROOT 'toolkit\configure_palantir.py') } catch { Warn "Palantir wiring failed - re-run toolkit\configure_palantir.py" }
-} else {
-  Step "skipped - pick a model later with: hermes model"
-  Step "  (or wire Palantir anytime: $PY $ROOT\toolkit\configure_palantir.py)"
 }
 
 # --- 6c. skills from their own sources (no forks) ---------------------------
