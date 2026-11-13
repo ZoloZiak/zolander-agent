@@ -70,7 +70,7 @@ druhé volanie ukáže reálny obsah + zvuk. Preto:
 
 ## ✅ KLIK NA HOTOVÝ HTML report (nielen md→html) — 2026-08-20, OVERENÉ
 Pôvodne `zol_desktop_notify.py --report <x>` robil VŽDY md→HTML (build_report). Ale
-niektoré daemony (napr. flat-rent-toolkit) už generujú BOHATÝ HTML report (Leaflet mapa +
+niektoré daemony už generujú BOHATÝ HTML report (Leaflet mapa +
 karty) — ten je oveľa lepší než jednoduchý md→html. Doplnené:
 - `report_url_from_path(p)` — ak `p` je http/https/file:// → vráti tak; ak existujúci
   súbor → `file://abs`; inak None.
@@ -79,7 +79,7 @@ karty) — ten je oveľa lepší než jednoduchý md→html. Doplnené:
 Takže daemon pošle `--report /abs/cesta/report.html` a klik otvorí presne ten pekný HTML.
 
 ## ⚠️ SILENT BUG — `report=` sa musí THREADNÚŤ cez KAŽDÝ caller wrapper (2026-08-20)
-Reálny prúser (vedúcko: "klik na report chýba"): flat-rent watcher volal svoj tenký
+Reálny prúser (vedúcko: "klik na report chýba"): jeden watcher daemon volal svoj tenký
 wrapper `notify.send(text, subject=...)`, ktorý NEMAL parameter `report` → do
 `zolander_notify.py` sa `--report` NIKDY neposlalo → banner vždy bez `-open` → v
 `notify.log` VŽDY `banner ok (report=nie)`. Klik tam mesiace proste NEBOL, nedalo sa to

@@ -73,10 +73,10 @@ def _looks_like_injection(text):
     return any(p.search(sample) for p in _INJECTION_PATTERNS)
 
 
-# ── OWNERSHIP HMAC (bod A, 2026-08, prevzate z example-org/peer-provider) ──
+# ── OWNERSHIP HMAC (bod A, 2026-08, prevzate z verejneho HyperspaceDB provider repa peer agenta) ──
 # Problem: recall bral memory_type/source z meta BEZ overenia. Writeback z WhatsApp/
 # cudzieho vstupu mohol ulozit zaznam ako 'identity' a recall ho bral ako jadro.
-# Riesenie (full model, presne ako jej _mutations.py): DVE nezavisle polia v meta:
+# Riesenie (full model, presne ako _mutations.py v tom repe): DVE nezavisle polia v meta:
 #   _hs_digest  = SHA256 nad OBSAHOM (kind|memory_type|source|text) — deteguje zmenu obsahu
 #   _hs_sig     = HMAC-SHA256 nad VLASTNICKYMI poliami (owner|kind|memory_type|source|_hs_digest)
 #                 klucom zo ZOL_MEM_HMAC_KEY — dokazuje "toto zapisal legitimny remember", nie model.

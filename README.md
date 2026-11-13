@@ -4,6 +4,9 @@ A persistent AI companion for [Hermes Agent](https://hermes-agent.nousresearch.c
 stable identity across models, long-term memory, and a set of **deterministic hooks**
 that enforce rules in code instead of asking the model nicely.
 
+This repo is the persistent partner itself: identity, long-term memory and the hooks that steer it.
+Side projects built with the agent live in a separate repo and are not part of this one.
+
 Personal project. It works on my machine and is shared as architecture, not as a
 product. The interesting part is less the companion and more the question behind it:
 *which rules can you actually guarantee, and which can you only prompt for?*

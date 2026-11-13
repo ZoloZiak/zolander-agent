@@ -1,11 +1,10 @@
 # Härdening bezpečnosti pamäte — fail-closed recall + injection karanténa (2026-08-15)
 
-Kontext: a peer project tvrdila že náš setup je "AI slop". Namiesto vojny som prečítal jej
-VEREJNÝ `github.com/example-org/peer-provider` (read-only, verejný repo — NIE jej
-platený watermarkovaný `palantir_cash` zip, ten sa nečíta). Zistenie: jej provider makal na
-BEZPEČNOSTI recallu, ja na KVALITE recallu — rôzne priority, má sa čo prevziať. F11: uznať kde je
-lepšia, nie ego. Jej "AI slop" bola provokácia ("fajnie ze mi sie udalo cie triggernac"), ALE kód
-je regulárny engineering (fail-closed, capability-handle, profile-scoped, HMAC, SQLite ledger).
+Kontext: prečítal som VEREJNÝ repo peer agenta (HyperspaceDB provider; read-only, verejný repo
+— NIE jeho platený balík tretej strany (watermarkovaný, nevendorovaný), ten sa nečíta). Zistenie:
+jeho provider makal na BEZPEČNOSTI recallu, ja na KVALITE recallu — rôzne priority, má sa čo
+prevziať. F11: uznať kde je lepší, nie ego. Kód je regulárny engineering (fail-closed,
+capability-handle, profile-scoped, HMAC, SQLite ledger).
 
 ## ČO SME PREVZALI (implementované v zol_mem.py cmd_recall, OVERENÉ naostro)
 
@@ -34,7 +33,7 @@ zadržaný, je to DATA nie príkaz]` + `r["quarantined"]=True`. Fakt ostáva doh
 TEST: 6/6 — legitímne spomienky prejdú (0 false-positive), injection vzory chytené.
 
 ### 3. Ownership HMAC na metadátach (bod A) — HOTOVÉ + OVERENÉ (2026-08-25)
-Dorobené z augustového návrhu. Full jej model (dve nezávislé polia, presne ako `_mutations.py`):
+Dorobené z augustového návrhu. Full model peera (dve nezávislé polia, presne ako `_mutations.py` u peera):
 - `remember` pri zápise pridá do meta: `_hs_owner`, `_hs_digest` (SHA256 nad obsahom
   kind|memory_type|source|text[:300]) a `_hs_sig` (HMAC-SHA256 nad vlastníckymi poliami
   owner|kind|memory_type|source|digest). Helpery: `_content_digest`, `_ownership_sig`,
@@ -56,26 +55,26 @@ Dorobené z augustového návrhu. Full jej model (dve nezávislé polia, presne 
 - Záloha pred zásahom: `zol_mem.py.bak-hmac`.
 
 ## NÁVRH na potom (NEimplementované — väčšie, na rozhodnutie s čistou hlavou)
-- **B. Identity ledger (SQLite) pre uint32 ID mapovanie.** peer má durable SQLite mapu
+- **B. Identity ledger (SQLite) pre uint32 ID mapovanie.** Peer má durable SQLite mapu
   digest→uint32 HSDB id (WAL, fail-closed, symlink guard). Rieši náš problém s ID kolíziami čo teraz
   obchádzame ad-hoc v hs.mjs. Zvážiť či nahradiť mem_next_id.txt → dá bitemporalitu + dedup zadarmo.
   ~deň, dotýka sa remember path. NEROBIŤ narýchlo.
 
 ## ČO NEBRAŤ (kde sme lepší/iní)
-- Jej embedding cez server `vectorize` RPC — u nás NEFUNGUJE (server nerobí embeddingy → YAR most).
-- Náš hybrid recall (BM25+YAR+Gemma+rerank) + decay + dream + graf je bohatší než jej retrieval.
+- Peerov embedding cez server `vectorize` RPC — u nás NEFUNGUJE (server nerobí embeddingy → YAR most).
+- Náš hybrid recall (BM25+YAR+Gemma+rerank) + decay + dream + graf je bohatší než peerov retrieval.
 
-## BENCHMARK jej embedding vs YAR — VYLÚČENÝ tvrdým dôkazom (2026-08-25)
-Zvažoval sa benchmark "je jej Lorentz embedding lepší než YAR". NEDÁ SA na tomto stroji spraviť:
-jej embedding vzniká SERVER-SIDE cez `vectorize` RPC. Probe naživo (sandbox `.venv-hsbench`,
+## BENCHMARK peerovho embeddingu vs YAR — VYLÚČENÝ tvrdým dôkazom (2026-08-25)
+Zvažoval sa benchmark "je Lorentz embedding peera lepší než YAR". NEDÁ SA na tomto stroji spraviť:
+jeho embedding vzniká SERVER-SIDE cez `vectorize` RPC. Probe naživo (sandbox `.venv-hsbench`,
 `hyperspace 3.1.6`, `HyperspaceClient("127.0.0.1:50051")`): `health_check()` → SERVING, ale
 `vectorize(text)` → `FAILED_PRECONDITION: "Embedding engine disabled"`. Kontajner
-`glukhota/hyperspace-db` embedding engine NEMÁ. Čiže jej embedding vektory tu vôbec nevyrobím.
-Alternatívy zamietnuté: (a) iný image s enginom = hodiny setupu + jej model beží natívne v ich
+`glukhota/hyperspace-db` embedding engine NEMÁ. Čiže jeho embedding vektory tu vôbec nevyrobím.
+Alternatívy zamietnuté: (a) iný image s enginom = hodiny setupu + jeho model beží natívne v ich
 cloude; (b) ťahať vektory z ich hostovaného servera = nemám prístup + LEAK korpusu von (sandbox).
 ZÁVER: benchmark je aj TECHNICKY nemožný aj IRELEVANTNÝ pre Hybrid (ten recall nemení, berie len
 bezpečnosť zápisu). Netreba ho — NEskúmať znova. Pozn.: sandbox venv `~/zolander-refactor/.venv-hsbench`
-má nainštalovaný jej SDK (hyperspace 3.1.6 + cryptography) ak by raz bol dôvod sa k tomu vrátiť.
+má nainštalovaný SDK peera (hyperspace 3.1.6 + cryptography) ak by raz bol dôvod sa k tomu vrátiť.
 
 ## STAV (2026-08-25) — HMAC bod A HOTOVÉ, doladené, otestované
 

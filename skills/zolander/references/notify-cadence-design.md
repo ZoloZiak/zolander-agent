@@ -25,7 +25,7 @@ Rieс to informaciou, nie spamom.
 2. RIEDKY PRAVDIVY BRIEF — 1x rano (a pripadne vecer) "zijem, loop OK, N tickov,
    dream spravil X". Ciastocne uz existuje v denniky/brief_*.md.
 3. ZIVA 24/7 GATEWAY — ak chce Zolandera "v loope s rukami, instruovatelneho kedykolvek"
-   = Hermes WhatsApp gateway obojsmerne (viz references/live-whatsapp-gateway.md), NIE notify ping.
+   = Hermes WhatsApp gateway obojsmerne, NIE notify ping.
 
 ## Ak veducko TRVA na fixnom intervale
 Kompromis: hlas IBA holy fakticky stav daemonov (loop bezi/nie, DB up/down, cas posledneho

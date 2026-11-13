@@ -59,7 +59,7 @@ _QUERIES = [
     "zolo2.0 kniha atom klasifikacia pipeline turiec",
     "anti halucinacia sycophancy zrkadlo verifikacia F11",
     "cron watchdog notifikacia iniciativa daemon launchd",
-    "peer A2A Ed25519 podpis peer identity",
+    "A2A Ed25519 podpis peer identity",
     "python subprocess venv toolkit cesta interpreter torch",
     "reasoning lens gate abstrakcia ascend pattern",
     "gabber hardcore techno 909 kick distorzia analog elektronika",

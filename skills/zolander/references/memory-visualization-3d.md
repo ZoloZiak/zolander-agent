@@ -6,7 +6,7 @@ NASIMI datami. Hotovy artefakt: `~/projects/zolander/viz/mozog.html` (self-conta
 ziadna nova zavislost v Zolanderovi).
 
 ## PRECO NIE semantica (a podobne)
-- semantica-agi/semantica je enterprise KG/compliance platforma ("open-source Palantir"):
+- semantica-agi/semantica je enterprise KG/compliance platforma:
   RDF/LPG store, SHACL/OWL governance, PROV-O audit traily. Ta pekna 3D siet co veducko
   videl je LEN jedno okno (Knowledge Explorer) postavene na **Sigma.js = 2D WebGL** (nie
   prave 3D s rotaciou v priestore) + ForceAtlas2. Natlacit nasu 129D hyperbolicku pamat do
@@ -121,118 +121,10 @@ vypluje MEGA "Loading weights: ...%" progress bar (desiatky tisic znakov) do std
 zahlti output tool-u. VZDY spustaj s `2>/dev/null` (chyby modelu nechces aj tak, realny vysledok
 je posledny riadok "OK <path> <N> bodov"). Bez toho dostanes 80k znakov smetia namiesto vysledku.
 
-## VARIANT 3 — MAPA KNIHY (nie pamate) `viz/gen_kniha_3d.py` -> `viz/kniha.html` (OVERENE 2026-08-15)
-Ked veducko chce "vidiet knihu / mozog knihy / mapu naratívu" (NIE Zolanderovu pamat): postav
-SAMOSTATNY snapshot nad kolekciou `lorentz129` (6110 atomov zolo2.0), NIKDY nemiesaj do zol_mem
-(kniha = literarny material, mozog.html = zol_mem = Zolanderova identita; su to dve rozne veci).
-Skript: `~/projects/zolander/viz/gen_kniha_3d.py`, spustenie
-`~/projects/zolander/.venv-yar/bin/python viz/gen_kniha_3d.py 2>/dev/null`.
-
-DATA (VSETKO UZ EXISTUJE — ZIADNY re-embed, na rozdiel od mozgu!):
-- `~/projects/zolo2.0/work/ingest_vectors_yar.jsonl` — {id, vector[129]} YAR Lorentz, 6110.
-- `~/projects/zolo2.0/work/ingest_meta.jsonl` — {id, gid, clean, category, ...}.
-- `~/projects/zolo2.0/work/assignments_opus.jsonl` — {gid, theme(A-I), layer(L1-L4), conf}.
-Pred stavbou skontroluj ci vektory uz su (glob work/*vec*/*lorentz*/*embed* + over vlen==129);
-mozog re-embeduje z textov lebo DB vektory necitatelne, ale kniha ma ingest_vectors_yar.jsonl hotovy.
-
-JOIN PASCA (nachytala ma — join dal 0 zaznamov): v `ingest_vectors_yar.jsonl` je pole "id" ale
-je to realne GID (int 1..6110), NIE meta["id"] (ktore je STRING "ZivotnyPlan:2"). Kluc spravne:
-vector["id"] == meta["gid"] == assignments["gid"]. Over prienik Pythonom (set(vids)&set(gids))
-PRED stavbou, nie po. 5866/6110 ma temu (zvysok = META/vyradene -> theme "?").
-
-GEOMETRIA (odlisna od mozgu — vyska NIE je x0 ale VRSTVA): y = LAYER_Y[layer] (L1=0 dole plytko
--> L4=6.6 hore); rovina (x,z) = PCA 128 priestorovych zloziek (SVD, skala ~9
-nie 6, inak sa vrstva zlepi do dosky). Farba = 8 tem A-I (fixny dict). Hrany kNN K=2 v Lorentzovej
-vzdialenosti. Vysledny tvar = 4 vodorovne vrstvy-pyramida (L1 siroka 3553 -> L4 uzka spicka 267),
-presna "cibula podla hlbky". Prepinac farby TEMY<->VRSTVY. Render = raw Three.js importmap (ako
-gen_pamat_3d.py): male gulicky scale=0.045+conf*0.10 setScalar(s) (NIE *3.2 — to bol blob co ma
-nachytal; po korekcii vidno jednotlive body), autoRotate 2.2, mobile (pixelRatio cap 2,
-SphereGeometry(1,10,10), enablePan=false, touch pick+dvojtuk toggle). gen_kniha_3d.py cita zolo2.0
--> SUKROMNY (nepushuj do verejneho repa, ako zol_book.py).
-
-## VARIANT 4 — KOMBI `viz/gen_viz_all.py` -> `viz/viz.html` (pamat+kniha v JEDNOM, OVERENE 2026-08-16)
-Ked veducko chce JEDEN subor s prepinacmi (nie zvlast mozog.html a kniha.html): `gen_viz_all.py`
-spoji zol_mem (434) + lorentz129 (6110) do jednej sceny. Oba su YAR 129D Lorentz -> spolocny
-priestor -> cross-hrany. DVA prepinace: DATASET (len kniha/len pamat/oboje) x RENDER (2 galaxie/
-kuzel/gula/mozog). Vsetky 4 layouty sa RATAJU V PYTHONE do nd.P[render]=[x,y,z], JS len prehodi
-pozicie + d3-free (raw Three.js importmap). Spustenie:
-  ~/projects/zolander/.venv-yar/bin/python viz/gen_viz_all.py 2>/dev/null   (re-embed pamate ~3-4min)
-- CONNECTOR = cross_edges(): pre kazdy mem najblizsi book v Lorentz vzdialenosti, cap 140 najsilnejsich.
-  Vizual mostov, DATA SA NEMIESAJU (kniha ostava lorentz129, pamat zol_mem). To je F11-cisty "most".
-  ⚠️ POZOR — YAR CROSS-MOSTY SU SEMANTICKY SUM (OVERENE 2026-08-16, vedúcko sa spytal "v com su
-  prepojene" a mal PRAVDU ze v nicom): vytiahol som 8 najblizsich mostov z realnych dat — dvojice
-  typu "korelacia != kauzalita" <-> "statocnost nie je darom prirody" = ZIADNY obsahovy suvis, a aj
-  ten NAJBLIZSI most mal dist 0.804 (skala 0=totozne ~1=nesuvisiace) => ani jeden nie je realne
-  blizky. Dovod: (1) YAR je slaby na vyznam (R@1 0.38, preto recall realne bezi na BM25+Gemma nie
-  YAR); porovnat dva slabe YAR vektory z ROZNYCH korpusov = skoro nahodne pary co VYZERAJU ako veda.
-  (2) pamat (fakty o systeme/userovi) a kniha (literarny material) sa obsahovo prekryvaju minimalne.
-  NEPREDAVAJ tie mosty ako "kde pamat rezonuje s knihou" — to je efektna loz. Bud ich (a) zrus, alebo
-  (b) HUD ich CESTNE oznaci "len blizkost v priestore, NIE obsahovy suvis, dist 0.80+" (spravene), alebo
-  (c) prerob connector cez EmbeddingGemma (768D, gemma_embed_server) — az SILNY semanticky embed da most
-  co realne znamena obsahovy suvis. Ak aj po Gemme vyjde malo mostov, to je PRAVDIVA odpoved (pamat a
-  kniha su malo prepojene), nie bug na zakrytie.
-  ✅ RIESENIE = HYBRID Gemma predfilter + OPUS reasoning (OVERENE 2026-08-16, vedúcko: "tak llm musi
-  najst mosty" — mal PRAVDU, sedi so skill §10: relacny sud NIE je podobnost tvaru textu ale reasoning):
-  ani cista Gemma to nezachranila (jej TOP par cos 0.736 "zdrzanlivost pred tvrdenim"<->"zakaz akcii
-  pred likvidaciou pobocky" = zase sum; distribucia: p50 cos 0.53, len 56/434 nad 0.6). Preto:
-  `toolkit/gemma_cross_llm.py` = FAZA1 embed oba korpusy cez gemma_embed_server :8901 (mode=document,
-  cache state/gemma_vecs.npz, l2norm s osetrenim NULOVEHO vektora inak divide-by-zero + osetri knizne
-  atomy <12 znakov), FAZA2 Gemma cosine top-K=8 kandidatov na spomienku, FAZA3 OPUS (llm_client
-  chat, system=prisny posudzovatel, davka 6, resume cross_llm.progress) rozhodne ktory kandidat REALNE
-  obsahovo suvisi -> {best_gid|null, strength, reason}. Prah MIN_STRENGTH 0.5. Vystup state/cross_bridges.json.
-  VYSLEDOK: z 434 spomienok Opus potvrdil len 23 mostov (z povodnych 140 YAR-sumovych) — a TIE davaju
-  zmysel (GrapheneOS<->hardened Android 0.9; boj proti entropii 0.85; "caja"=dievca 0.75; mikroplasty
-  v tkanivach<->chemikalie 0.75). Malo mostov = VERNA mapa (pamat=prevadzka systemu, kniha=pribeh, malo
-  sa prekryvaju), nie zlyhanie. gen_viz_all.py: load_llm_bridges() joinne cross_bridges.json cez
-  mem_id->mem node + gid->book node, hrana=[i,j,1-strength,reason,strength]; JS EX nesie reason+strength,
-  pick tooltip pri uzle ukaze "⚡ most (strength): reason". eCross~22. VZDY: gemma_embed daemon musi
-  bezat (curl :8901/embed), Opus zadarmo davkuj. gemma_cross*.py citaju zolo2.0 -> SUKROMNE (nepushovat).
-- VYBOJE (co veducko chcel, "elektricke prudy medzi neuronmi"): NIE gulicky posuvane po hrane
-  Zmerane naostro cez Gemma (768D, gemma_embed_server :8901, oba korpusy mode=document, cosine):
-  distribucia najlepsej podobnosti p50=0.526, p100=0.736, len 56/434 spomienok malo najblizsi atom
-  nad 0.6. Gemma je jasne lepsia nez YAR v STREDE distribucie, ALE "top mosty" boli STALE sum:
-  najsilnejsi par cos 0.736 = "zdrzanlivost pred tvrdenim" <-> "zakaz akcii pred likvidaciou pobocky"
-  = ziadny suvis. Dovod je STRUKTURALNY, nie o kvalite embeddera: pamat=fakty o prevadzke systemu/
-  userovi, kniha=pribeh — dva rozne svety, obsahovo sa skoro neprekryvaju; ziadny embedding
-  nevyrobi most co tam nie je. VEDUCKO MAL PRAVDU: "llm musi najst mosty". Presne ako skill §10
-  (ziak-local-ai-stack): priradenie temy/vztahu NIE je "podobnost tvaru textu" ale REASONING -> robi
-  OPUS, nie embedder. SPRAVNY connector = HYBRID (rovnaky vzor ako recall): (1) Gemma predfilter
-  top-K=8 kandidatov na spomienku (lacne, zuzi), (2) OPUS davka posudi ktory kandidat REALNE obsahovo
-  suvisi (prisny system prompt, default null, sila 0-1 + dovod), (3) most = LEN Opusom potvrdeny par
-  s jeho zdovodnenim v tooltipe, sila=jas/hrubka ciary. Nastroje (SUKROMNE, citaju zolo2.0):
-  toolkit/gemma_cross.py (diagnostika distribucie), toolkit/gemma_cross_llm.py (hybrid, resumovatelny:
-  gemma_vecs.npz cache + cross_llm.progress; llm_client.chat(system=...) davka 6, prah 0.5;
-  osetruje divide-by-zero z prazdnych/kratkych textov -> l2norm s n[n==0]=1 + book min len 12).
-  Vystup state/cross_bridges.json. PITFALL: prazdne/kratke texty daju nulovy Gemma vektor -> matmul
-  divide-by-zero warning + falosne vysoke skore v top parov; filtruj kratke texty PRED embedom.
-  POUCENIE (prenosne): ked "najblizsie" pary z embeddera nedavaju zmysel, NEZNIZUJ prah aby ich bolo
-  viac — to je menej klamliva verzia toho isteho divadla. Bud connector zrus, alebo daj rozhodnutie LLM.
-- VYBOJE (co veducko chcel, "elektricke prudy medzi neuronmi"): NIE gulicky posuvane po hrane
-  (vedúcko to odmietol: "lietajuce gulicky, nie vyboje po kabloch"). SPRAVNE = svetelny ZABLESK
-  s chvostom letiaci po kabli: kratky usek [t-TAIL, t] rozdeleny na SEG=7 dielikov, jas slabne po
-  chvoste (pow((s+1)/SEG,1.7)), AdditiveBlending + depthWrite:false, VSETKY pulzy v JEDNEJ
-  LineSegments geometrii (1 draw call, setDrawRange). Staticke kable stlm na opacity 0.22 nech
-  ziari hlavne pulz. VYZNAM (vedúcko sa pytal "co to vizualizuje" — nesmie to byt cira ozdoba):
-  pulz = "asociacia prave prebehla"; rychlost+jas ~ sila spojenia (str=1-w, blizsie=rychlejsie+
-  jasnejsie); ZLTY pulz po cross-moste = spomienka rezonuje s myslienkou z knihy, modry=intra kniha,
-  fialovy=intra pamat. POZOR: pohyblivy efekt sa na STATICKOM screenshote takmer neda overit —
-  over layout/kable/farby vision-om, ale "ci to vyzera ako prud" posud vedúcko naostro v browseri.
-- GALAXIE layout: kazdy dataset vlastna PCA3 *0.5 + posun po X (+-13). Kniha vpravo, pamat vlavo.
-- MESH MOZOG (5. tvar, OVERENE 2026-08-16, vedúcko chcel "mesh mozgu"): body napchane do TVARU MOZGU.
-  Poctivo mu POVEDZ ze je to KOZMETIKA — poloha uz nenesie Lorentz info (na rozdiel od ostatnych 4
-  tvarov); HUD to aj pise "kozmetika, poloha nenesie dáta". Python layout: PCA3 mraku -> normalizuj
-  do kocky -> radialne stiahnut do gule (u=c/|c|, rr=|c|^0.7) -> hemisfera podla ds (book=prava sign+1,
-  mem=lava sign-1), elipsoid BRX3.4 BRY3.0 BRZ4.3, fisura FISS0.5. JS obal = proceduralne 2 hemisfery
-  (SphereGeometry zdeformovana: gyri sinusy, splostit spodok y*0.82, x=sign*(|x|*0.94+0.42)),
-  MeshStandardMaterial ruzovy opacity0.12 depthWrite:false DoubleSide. brainGrp.visible=(render==='mesh').
-  ZIADNY externy GLB (shell-safe, offline). PITFALL: np.linalg.norm(c,axis=1,keepdims=True) da (m,1) ->
-  rr[k2] pole nie skalar -> TypeError "only 0-dim arrays"; sploR na 1D (bez keepdims, u=c/r[:,None]).
-  PITFALL2: FISS0.5 primala -> hemisfery splyvaju, pozdlzna ryha nie jasne vidno; ciste dve poloviny =
-  zvacsi FISS. YAR progress bar ide na STDERR aj cez 2>/dev/null (80k smeti) — realny error = posledny Traceback.
-- BLOB PASCA (nachytala aj tu, vedúcko ma na tom chytil uz 3x): prve gule 0.05+val*0.11 boli
-  privelke -> zlepeny blob. OPRAVENE na 0.035+val*0.06 + galaxie offset 9->13, PCA *0.62->0.5.
-  VZDY over vision po prvom rendri, guľky maju byt MALE bodky nie gule.
-- gen_viz_all.py cita zolo2.0 -> SUKROMNY (nepushuj do verejneho repa, ako gen_kniha_3d.py).
+## VARIANT 3 a 4 — presunute mimo tohto repa
+Mapa knihy, kombinovany pohlad pamat+kniha a cross-mosty pamat<->kniha patria side projektu
+nad separatnou knihou a boli presunute do samostatneho repa. Tu ostava len vizualizacia
+samotnej pamate (varianty 1 a 2 + 2D prehlad nizsie).
 
 2D TEXTOVY PREHLAD (nie 3D, ked veducko chce len "vypis co mas v pamati" ako HTML report):
 `toolkit/gen_pamat_html.py` -> `state/reports/pamat.html` = karty faktov grupovane podla kind

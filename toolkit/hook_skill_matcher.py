@@ -85,12 +85,6 @@ BOOST = [
     (r"\b(hermes\s*(config|nastav|setup|provider|model|tool|voice|gateway|"
      r"plugin)|nastav\w*\s*hermes|hermes\s*config\s*set)\b",
      "hermes-agent", 4),
-    # --- zolo2.0 knizny projekt ---
-    (r"\b(zolo|kapitol\w*|kniha|knihu|humaniz\w*|masterplan|ensemble|"
-     r"multi.?model|write_chapter|atom\w*|ingest)\b",
-     "zolo-book-pipeline", 4),
-    (r"\b(atom\w*|klasifik\w*|taxonom\w*|vrstv\w*\s*l[1-4]|enrich)\b",
-     "zolo-atom-enrichment", 3),
     (r"\b(zolander|persona|companion|partak|mentor|identita)\b",
      "zolander", 3),
     # --- Zolander interne: loop/dream/brief/watchdog/decay/pamat (NIE durable-batch!) ---
@@ -108,10 +102,6 @@ BOOST = [
      r"scrapling|anti.?bot|tls.?fingerprint|ja3|403\s*forbidden|"
      r"impersonate|stealth\s*browser)\b",
      "antibot-scraping", 5),
-    # --- OLX / prenajom bytu / inzeraty watcher ---
-    (r"\b(olx|otodom|domiporta|morizon|prenaj\w*|inzerat\w*|kawalerk\w*|"
-     r"byt\w*\s*(watch|sledov|prenaj)|nehnutel\w*)\b",
-     "olx-scraping-and-watch", 4),
     # --- data-provenance audit (vymyslene cisla / fabrikacia) ---
     (r"\b(provenance|fabrik\w*|vymysl\w*\s*cisl\w*|vycucan\w*|hardcod\w*\s*"
      r"(data|cisl)|halucin\w*\s*(cisl|stat)|overit\s*ci\s*.*realne)\b",
@@ -138,7 +128,7 @@ BOOST = [
     # --- skill authoring ---
     (r"\b(napis\w*\s*skill|vytvor\w*\s*skill|skill\s*author|frontmatter)\b",
      "hermes-agent-skill-authoring", 4),
-    # --- humanizacia textu (mimo zolo pipeline) ---
+    # --- humanizacia textu ---
     (r"\b(humaniz\w*|neznie\s*ako\s*ai|znie\s*ako\s*ai|odai\w*|"
      r"prirodzenej\w*\s*text|menej\s*roboticky)\b",
      "humanizer", 3),

@@ -65,7 +65,7 @@ QUERIES = [
     "zolo2.0 kniha atom klasifikacia pipeline",
     "anti halucinacia sycophancy zrkadlo verifikacia",
     "cron watchdog notifikacia iniciativa daemon",
-    "peer A2A Ed25519 podpis peer",
+    "A2A Ed25519 podpis peer",
     "python subprocess launchd venv toolkit cesta",
     "reasoning lens gate abstrakcia ascend pattern",
     "fikcia postava kontaminacia",
