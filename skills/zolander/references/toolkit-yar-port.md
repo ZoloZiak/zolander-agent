@@ -11,8 +11,8 @@ Platí pre KAŽDÝ toolkit skript čo saha na pamäť alebo embedding.
   → decay/remember/ascend v sne by TICHO SPADLI. Vždy explicitný VENV_YAR.
 - Vzor: skript sám beží pod venv-yar; embedding volá subprocessom
   `[VENV_YAR, embed_yar.py]` (JSONL in/out), takže volajúci nemusí mať torch v procese.
-  LLM (palantir_client chat) je oddelený — beží pod sys python (stdlib urllib);
-  `sys.path.insert(0, ~/projects/zolo2.0/toolkit)` pre import chat.
+  LLM (llm_client chat) je oddelený — beží pod sys python (stdlib urllib);
+  `from llm_client import chat` (toolkit/ je na sys.path).
 - KRYPTO/identita (Ed25519): a2a.py, gen_identity.py, integrity.py MUSIA bežať pod
   SYSTÉMOVÝM `/usr/bin/python3` — ten má `cryptography` (overené v50.0.0). .venv-yar
   je torch-only a `cryptography` NEMÁ (ModuleNotFoundError). Takže: embedding→venv-yar,
@@ -124,7 +124,7 @@ Platí pre KAŽDÝ toolkit skript čo saha na pamäť alebo embedding.
 - Poradie overenia rebríka: najprv `--dry` (LLM destilát BEZ zápisu do DB, vidíš
   kvalitu clusteru), zápis naostro až keď je cluster správny. DB ostane nedotknutá.
 - Potvrdené naživo (2026-08): patterns detect aj ascend step L2→L3 bežia E2E cez Opus
-  (palantir_client), exit 0. Predtým to bolo len napísané/aspiračné (audit "téza pred kódom").
+  (llm_client), exit 0. Predtým to bolo len napísané/aspiračné (audit "téza pred kódom").
 
 ## 4d. A2A most — post→read + POVINNÝ tamper test (bez LLM, sys python3)
 - a2a.py post→read cyklus spusti naostro: telo cez write_file do state/*.txt, potom
@@ -221,7 +221,7 @@ Platí pre KAŽDÝ toolkit skript čo saha na pamäť alebo embedding.
 ## 8. Sken citlivých údajov pred publikovaním (peer výčitka)
 - Pred/po publikovaní preskenuj `git ls-files` obsah na: meno usera, absolútne home
   cesty (okrem `/Users/__USER__/`), PEM/private key, fingerprint/pubkey hex literály,
-  email, IP, token/api_key/secret, infra (custom-ca, palantir).
+  email, IP, token/api_key/secret, infra (custom-ca).
 - Rozlíš false-positives: `.gitignore` riadok `netrc` = PRAVIDLO čo chráni (nie únik);
   `password=None` = cryptography API param (nie heslo); `localhost:50051` = loopback
   port (necitlivé). Každý nález vysvetli, nezmietni ani nezľakni sa naslepo.

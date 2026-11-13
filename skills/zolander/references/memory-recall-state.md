@@ -61,7 +61,7 @@ mem_index.jsonl, zlúčené SCORE-FÚZIOU (min-max normalizácia oboch, váhy W_
 3. LLM RE-RANK (mem_rerank.rerank, Opus) — VOLITEĽNÝ. Zapína obj["rerank"]=true /
    env ZOL_RECALL_RERANK=1. Vezme top-8 z fúzie, Opus preusporiada podľa ZÁMERU. Fail-open.
    Overené naostro: "hladam izbu blizko roboty" -> #383 izby prvé. Výstup má "reranked":true.
-   mem_rerank importuje palantir_client (chat) zo zolo2.0/toolkit.
+   mem_rerank importuje llm_client (chat) z toolkit/.
 PORADIE STAVANIA (nutnosť): plný text -> stemmer -> re-rank. Re-rank na odseknutých
 útržkoch alebo zlých kandidátoch = piesok.
 

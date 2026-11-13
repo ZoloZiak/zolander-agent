@@ -15,7 +15,7 @@ okno kde sa loguje VŠETKO čo sa deje." Postavené a otestované naostro. Toto 
 
 ## Prečo A (v hooku) a NIE len volateľná knižnica — a čo to stojí
 Vedúcko vedome zvolil default-ON v hooku (beží pri KAŽDEJ mojej odpovedi s editom, aj
-cez WhatsApp gateway). Cena: prvý edit v úlohe +30-60s (dva LLM cez Palantir proxy),
+cez WhatsApp gateway). Cena: prvý edit v úlohe +30-60s (dva LLM cez LLM API),
 riziko 429 pri veľkej session. Preto POVINNÉ poistky nižšie. Alternatíva B (volať
 `zol_eval` ručne na konci roboty, kde mám plný kontext) je lacnejšia — ak to niekedy
 preáča, prepni späť na B cez `ZOL_VERIFY_MOA=0`.

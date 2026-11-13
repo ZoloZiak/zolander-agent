@@ -11,7 +11,7 @@ cryptography>=42.0          # Ed25519 identity key + signing (gen_identity, a2a)
 
 # --- memory math / LLM client ----------------------------------------------
 numpy>=1.26                 # Lorentz geometry, clustering, eval math
-# palantir_client is pure stdlib (urllib) — no extra deps.
+# llm_client is pure stdlib (urllib) — no extra deps.
 
 # --- native hyperbolic embedder (YAR v5) ------------------------------------
 # Heavy (~2-3 GB with CUDA wheels). On a CPU-only box `pip install torch` pulls the

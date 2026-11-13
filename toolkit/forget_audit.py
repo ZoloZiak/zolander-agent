@@ -51,8 +51,8 @@ PROGRESS = os.path.join(WORK, "progress.json")
 VERDICTS = os.path.join(WORK, "verdicts.jsonl")
 AUDIT_LOG = os.path.join(WORK, "audit.log")
 
-sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))  # palantir_client (legacy)
-sys.path.insert(0, os.path.join(HOME, "projects", "common"))  # palantir_client (reorg 2026-09)
+sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))  # legacy
+sys.path.insert(0, os.path.join(HOME, "projects", "common"))  # reorg 2026-09
 sys.path.insert(0, os.path.join(ROOT, "toolkit"))
 
 MODEL = os.environ.get("ZOL_FA_MODEL", "opus")
@@ -155,7 +155,7 @@ def load_candidates():
 def _call_llm(items):
     """Zavolaj LLM na batch [{id,text}], vrat dict id->verdikt objekt. Fail => {}."""
     import signal
-    from palantir_client import chat
+    from llm_client import chat
 
     class _T(Exception):
         pass

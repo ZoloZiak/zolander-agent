@@ -6,7 +6,7 @@ REALISTICKU SK otazku INYMI slovami (parafraza, synonyma) — tak sa testuje ci
 recall chyta VYZNAM, nie len zhodu slov. Vystup: state/mem_eval_gold.json
 [{"id": <ocakavany zaznam>, "query": "<otazka>"}]. Opakovatelne (uloz raz, meraj vela ráz).
 
-Bezi pod .venv-yar (palantir_client tam funguje, overene). Bez SSL pekla homebrew py3.13.
+Bezi pod .venv-yar (llm_client tam funguje, overene). Bez SSL pekla homebrew py3.13.
 """
 import os
 import re
@@ -48,7 +48,7 @@ def load_rows():
 
 
 def main():
-    from palantir_client import chat
+    from llm_client import chat
     rows = load_rows()
     # rovnomerne vzorkuj naprie korpusom (nie len zaciatok) pre roznorodost tem
     step = max(1, len(rows) // N_SAMPLE)

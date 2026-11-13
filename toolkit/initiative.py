@@ -322,7 +322,7 @@ def gather():
 def decide(context):
     """OPUS rozhodne ci navrhnut. Fail-open: chyba/timeout => propose=false."""
     import signal
-    from palantir_client import chat
+    from llm_client import chat
 
     class _T(Exception):
         pass

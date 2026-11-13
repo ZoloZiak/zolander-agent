@@ -8,7 +8,7 @@ Fázy:
   3. RANNÝ BRIEF — denniky/brief_<dátum>.md: čo sa dialo, nové L1, NÁVRHY forget
 
 READ-ONLY voči DB: NIČ nemaže (P2/P3 — deštrukcia až po rannom audite od vedúcka).
-Beží pod /usr/bin/python3 (palantir_client = stdlib urllib). zol_mem.py = subprocess.
+Beží pod /usr/bin/python3 (llm_client = stdlib urllib). zol_mem.py = subprocess.
 """
 import os
 import sys
@@ -171,7 +171,7 @@ def _ldist(a, b):
 
 def _distill_group(group, model):
     """LLM destilat JEDNEJ tematicky suvislej skupiny epizod -> 1 L1 poznatok."""
-    from palantir_client import chat
+    from llm_client import chat
     joined = "\n".join(f"- {e.get('text', '')}" for e in group)
     system = ("Si Zolander, pamatovy konsolidator. Z epizod JEDNEJ temy vydestiluj "
               "1-2 vety trvaleho poznatku (semantic memory) po slovensky. Len fakt/"

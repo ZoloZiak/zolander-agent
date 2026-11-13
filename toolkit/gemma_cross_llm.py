@@ -13,7 +13,7 @@ Pipeline (resumovatelny):
                suvisi, vrati {mem_idx, best_gid|null, strength 0-1, reason}. Prisny (default null).
   Vystup: state/cross_bridges.json = LEN Opusom potvrdene mosty (s dovodom). Resume: cross_llm.progress
 
-Beh: /usr/bin/python3 (numpy + palantir_client zo zolo2.0). Daemon Gemma na :8901.
+Beh: /usr/bin/python3 (numpy + llm_client). Daemon Gemma na :8901.
 """
 import os
 import sys
@@ -113,7 +113,7 @@ SYSTEM = (
 
 
 def ask_opus(batch_items):
-    from palantir_client import chat
+    from llm_client import chat
     payload = []
     for it in batch_items:
         payload.append({

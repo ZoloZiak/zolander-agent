@@ -251,7 +251,7 @@ def cmd_lens():
     if not problem:
         print("pouzitie: zol_session.py lens \"<problem>\"", file=sys.stderr)
         sys.exit(2)
-    # lens lift potrebuje palantir_client (LLM) — beží pod sys python (stdlib urllib)
+    # lens lift potrebuje llm_client (LLM) — beží pod sys python (stdlib urllib)
     rc, out, err = _run([SYS_PY, LENS, "lift"],
                         stdin=json.dumps({"problem": problem}))
     if rc == 0:

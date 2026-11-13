@@ -100,6 +100,18 @@ hooks:
 
 Allowlist them once with `hermes hooks doctor`.
 
+## LLM access
+
+Toolkit scripts call vendor APIs directly through `toolkit/llm_client.py` (stdlib only).
+Keys come from the environment, then `~/.hermes/.env`:
+
+- `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` (ids with `/`)
+- `ANTHROPIC_BASE_URL`, `GEMINI_BASE_URL`, `OPENAI_BASE_URL` override the endpoints; the
+  OpenAI one also works for OpenRouter, Ollama, LM Studio (set any dummy key for local servers)
+- aliases `opus`, `sonnet` default to `claude-opus-5-5` / `claude-sonnet-5-5`; `gpt`, `gpt-mini`,
+  `gpt55`, `gemini`, `flash`, `ox` need `LLM_MODEL_<ALIAS>` (e.g. `LLM_MODEL_GPT_MINI`)
+- `LLM_MIN_INTERVAL` sets seconds between requests (default 0.4)
+
 ## Layout
 
 ```

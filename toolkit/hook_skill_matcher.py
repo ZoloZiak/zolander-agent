@@ -73,7 +73,7 @@ STOPWORDS = {
 # Vaha 4-6 = silny signal (pridava sa k skore skillu). Rozsiruj podla potreby.
 BOOST = [
     # --- lokalny AI stack (__USER__) ---
-    (r"\b(palantir|agy|bridge|fallback|embed\w*|vektor\w*|vector\w*|"
+    (r"\b(llm_client|agy|bridge|fallback|embed\w*|vektor\w*|vector\w*|"
      r"hyperspace\w*|orbstack|vmlx|mlx|gpu\s*embed\w*|"
      r"rate.?limit|local.?llm|lokaln\w*\s*llm)\b",
      "ziak-local-ai-stack", 5),

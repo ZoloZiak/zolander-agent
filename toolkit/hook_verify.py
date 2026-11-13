@@ -19,7 +19,7 @@ POISTKY MoA (aby nezlozilo session / 429 / sandbox):
   - LEN attempt 0: nudne raz, neopakuje donekonecna.
   - THROTTLE: max raz za ZOL_VERIFY_MOA_COOLDOWN s (default 120) cez stamp subor.
   - FILTER: len .md/kod, 200..20000 znakov, max 2 subory/turn.
-  - ENV self-load: PALANTIR_TOKEN (~/.zsh_secrets) + SSL bundle (hook nema .zshrc).
+  - Kluce: llm_client (env, potom ~/.hermes/.env); bez kluca sa MoA ticho preskoci.
   - SIGALRM watchdog (default 90s) + FAIL-OPEN vsade: LLM zlyha/visi -> ticho pusti.
   - Hook nikdy nespadne (except -> ticho).
 """
@@ -99,19 +99,6 @@ def _mechanical(changed):
 
 # ---------- MoA vrstva (opt-in) ----------
 
-def _ensure_env():
-    """Hook bezi pod /usr/bin/python3 bez .zshrc -> dopln token sam."""
-    if not os.environ.get("PALANTIR_TOKEN"):
-        try:
-            for line in open(os.path.expanduser("~/.zsh_secrets"), encoding="utf-8"):
-                s = line.strip()
-                if "PALANTIR_TOKEN" in s and "=" in s:
-                    os.environ["PALANTIR_TOKEN"] = s.split("=", 1)[1].strip().strip('"').strip("'")
-                    break
-        except Exception:
-            pass
-
-
 def _throttled():
     cooldown = float(os.environ.get("ZOL_VERIFY_MOA_COOLDOWN", "120"))
     stamp = os.path.join(tempfile.gettempdir(), "zol_moa_stamp")
@@ -151,9 +138,14 @@ def _moa_review(changed, cwd):
         return ""
     if _throttled():
         return ""
-    _ensure_env()
-    if not os.environ.get("PALANTIR_TOKEN"):
-        return ""  # bez tokenu netlac
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import llm_client
+        # generator opus + judges gpt/gemini (zol_eval.TRIO)
+        if not all(llm_client.has_credentials(m) for m in ("opus", "gpt", "gemini")):
+            return ""  # bez kluca netlac
+    except Exception:
+        return ""
 
     # watchdog: cely MoA ohranicny budget (default 90s). Cross-platform —
     # SIGALRM je POSIX-only (na Windows neexistuje), preto strazime cez

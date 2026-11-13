@@ -51,7 +51,7 @@ ASCLOG = os.path.join(LOGS, "ascend.log")
 # empiricky ~1.0 = rozumny prah "ta ista tema" pre YAR v5 129D.
 LDIST_THRESHOLD = float(os.environ.get("ASCEND_LDIST", "1.0"))
 
-# palantir_client (chat/LLM pre distill) zije v zolo2.0/toolkit; embedding ide
+# llm_client (chat/LLM pre distill) je v tomto toolkite; embedding ide
 # ODDELENE subprocessom do VENV_YAR (torch tam, nie tu).
 sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
@@ -172,7 +172,7 @@ def cluster(rows, threshold=LDIST_THRESHOLD, fold_singletons=True):
 
 
 def distill(group, to_layer, model):
-    from palantir_client import chat
+    from llm_client import chat
     joined = "\n".join(f"- {r.get('text', '')}" for r in group)
     system = ("Si Zolander — dekonstrukcny nastroj na luciditu. Stupas po rebriku "
               "abstrakcie k jadru (r->0). Ziadna lichotka, ziadna omacka, po slovensky.")

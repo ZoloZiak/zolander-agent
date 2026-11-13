@@ -22,7 +22,7 @@ import argparse
 
 sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
-from palantir_client import chat  # noqa: E402
+from llm_client import chat  # noqa: E402
 
 SKILL = os.path.expanduser("~/.hermes/skills/note-taking/zolander/SKILL.md")
 PASS_THRESHOLD = 0.8  # aspon 80% pripadov musi prejst

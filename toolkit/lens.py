@@ -5,7 +5,7 @@ Dva rezimy:
 
 1) lift  — pred vaznou odpovedou: pomenuj UROVEN abstrakcie problemu, vystup
    o jednu vyssie (X -> instancia coho Y -> meta-otazka Z), a P5 zostup spat
-   ku konkretnej akcii. Vyuziva gpt/opus cez palantir_client. Vystup je
+   ku konkretnej akcii. Vyuziva gpt/opus cez llm_client. Vystup je
    struktura {level, up, meta, down_action} + prirodzena veta.
 
 2) stability — Lyapunov-style self-check: dostane trajektoriu krokov uvazovania
@@ -33,7 +33,7 @@ import sys
 import json
 import math
 
-# palantir_client (chat/LLM) zije v zolo2.0/toolkit; embedding je ODDELENY
+# llm_client (chat/LLM) je v tomto toolkite; embedding je ODDELENY
 # subprocess do VENV_YAR (torch tam, nie tu).
 sys.path.insert(0, os.path.join(os.path.expanduser("~"), "projects", "zolo2.0", "toolkit")) if os.path.isdir(os.path.join(os.path.expanduser("~"),"projects","zolo2.0","toolkit")) else sys.path.insert(0, os.path.join(os.path.expanduser("~"),"zolo2.0","toolkit"))
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
@@ -133,7 +133,7 @@ Vrat IBA JSON: {"level":"...","up":"...","meta":"...","down_action":"..."}"""
 
 
 def lift(problem, model="opus"):
-    from palantir_client import chat
+    from llm_client import chat
     raw = chat(problem, model=model, system=LIFT_SYSTEM, max_tokens=700).strip()
     s, e = raw.find("{"), raw.rfind("}")
     if s >= 0 and e > s:

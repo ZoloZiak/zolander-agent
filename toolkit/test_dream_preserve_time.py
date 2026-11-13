@@ -2,7 +2,7 @@
 """Regression test for The Sleeping Agent (arXiv 2608.11775).
 
 Dream L0->L1 consolidation must not instruct the model to drop dates/time facts.
-The test stubs palantir_client.chat, captures the system prompt, and verifies
+The test stubs llm_client.chat, captures the system prompt, and verifies
 that the consolidation prompt preserves temporal information when present.
 """
 import os
@@ -12,7 +12,7 @@ import types
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 captured = {}
-fake = types.ModuleType("palantir_client")
+fake = types.ModuleType("llm_client")
 
 
 def chat(prompt, model="opus", max_tokens=200, system=""):
@@ -23,7 +23,7 @@ def chat(prompt, model="opus", max_tokens=200, system=""):
 
 
 setattr(fake, "chat", chat)
-sys.modules["palantir_client"] = fake
+sys.modules["llm_client"] = fake
 
 import zolander_dream as dream  # noqa: E402
 

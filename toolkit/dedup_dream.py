@@ -79,7 +79,7 @@ def _ask_opus(rows, model):
     HARD timeout: chat s max_retries=2 (nie 6) + wall-clock alarm, aby jedno
     visiace LLM volanie nezaseklo nocny dream (2026-08-08: visel 25 min na 6x300s)."""
     import signal
-    from palantir_client import chat
+    from llm_client import chat
     listing = "\n".join(f"[{r['id']}] {r.get('text', '')}" for r in rows)
     prompt = f"Spomienky:\n{listing}\n\nNajdi skupiny duplikatov."
 
@@ -141,7 +141,7 @@ def _is_superset(keeper, cand, model):
     -> False (rasej nezmaz nez straC fakt). Toto je poistka proti tomu, ze dedup-sudca
     zle zoskupi (2026-09-02: zmazal by bohatsi 389/494, alebo cudzi fakt 382)."""
     import signal
-    from palantir_client import chat
+    from llm_client import chat
     kt = keeper.get("text", "")
     ct = cand.get("text", "")
     if not kt or not ct:

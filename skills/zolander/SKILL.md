@@ -158,7 +158,7 @@ reasoning engine (gate/lens/pattern, ascend, abstrakčný stroj) v runbooku.
 **Prevádzka (nástroje, daemony, postupy)**
 - `toolkit-runbook.md` — session lifecycle, zol_guard, verifikačný counter, reasoning engine,
   iniciatíva „zrob N", daemony (loop/dream/brief/watchdog/writeback), decay/integrity zhrnutie,
-  zol_tasks/gc/events, model-eval, git/cmd_guard/patch/reorg pasce, A2A/peer/palantir/repo pointre.
+  zol_tasks/gc/events, model-eval, git/cmd_guard/patch/reorg pasce, A2A/peer/palantir_cash/repo pointre.
 - `hermes-hooks-enforcement.md` — ako fungujú hooky (recall/verify), tvrdý zámok recall-first.
 - `moa-verify-hook.md` — MoA cross-model review v hook_verify.
 - `durable-daemons-integrity.md` — architektúra loop/dream/work + diagnostika.

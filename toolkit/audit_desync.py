@@ -57,7 +57,7 @@ QUERIES = [
     "byvanie example district prenajom izba",
     "sandbox zamknuty Mac MDM shell prikaz bezpecnost",
     "HyperspaceDB kolekcia lorentz cosine port container",
-    "Palantir LLM proxy token Opus Sonnet GPT Gemini",
+    "LLM API key provider Opus Sonnet GPT Gemini",
     "geometria hyperbolicka cone strom hierarchia klaster",
     "gateway WhatsApp Beeper Matrix fallback Groq",
     "git push repo sanitizacia commit skill",

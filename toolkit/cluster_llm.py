@@ -28,7 +28,7 @@ import json
 import os, sys
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
-# palantir_client (chat/LLM) zije v zolo2.0/toolkit — volajuci moduly uz maju
+# llm_client (chat/LLM) je v tomto toolkite — volajuci moduly uz maju
 # sys.path.insert na neho; import robime LAZY vo funkcii (ako inde v projekte).
 
 MAX_DIRECT = int(os.environ.get("CLUSTER_LLM_MAX_DIRECT", "18"))
@@ -122,7 +122,7 @@ def llm_cluster(rows, embed_fn, ldist_fn, threshold, model="opus",
 
     # <= max_direct: LLM dostane vsetky naraz a zoskupi od nuly
     try:
-        from palantir_client import chat
+        from llm_client import chat
         listing = "\n".join(f"[{i}] {r.get('text', '')}" for i, r in enumerate(rows))
         prompt = (
             f"Mam {len(rows)} konceptov. Zoskup ich podla toho, ktore su instanciou "

@@ -109,7 +109,7 @@ def rerank(query, candidates, model="opus", max_ids=None):
     if cached is not None:
         return cached[:max_ids] if max_ids else cached
     try:
-        from palantir_client import chat
+        from llm_client import chat
     except Exception:
         return orig
     lines = [f"OTAZKA: {query}", "", "KANDIDATI:"]

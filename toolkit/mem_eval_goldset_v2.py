@@ -20,7 +20,7 @@ fuzia). Default eval rezimy (yar_only/bm25_only/hybrid bez rerank) Opusa nepouzi
 curbing Opusom ich nerigne. (Rerank rezim ma miernu prekryvku — poznamenane.)
 
 Vystup: state/mem_eval_gold_v2.json = [{"id","query","kind"}]. Zaloha stareho pred zapisom.
-Bezi pod .venv-yar (palantir_client). Env: EVAL_N (default 120), GOLD_OUT, EVAL_JUDGE=0 vypne judge.
+Bezi pod .venv-yar (llm_client). Env: EVAL_N (default 120), GOLD_OUT, EVAL_JUDGE=0 vypne judge.
 """
 import os
 import re
@@ -33,7 +33,7 @@ HOME = os.path.expanduser("~")
 ZROOT = os.environ.get("ZOLANDER_ROOT", os.path.join(HOME, "projects", "zolander"))
 IDX = os.path.join(ZROOT, "state", "mem_index.jsonl")
 OUT = os.environ.get("GOLD_OUT", os.path.join(ZROOT, "state", "mem_eval_gold_v2.json"))
-# palantir_client zije v zolo2.0/toolkit
+# llm_client je v tomto toolkite
 for cand in (os.path.join(HOME, "projects", "zolo2.0", "toolkit"),
              os.path.join(HOME, "zolo2.0", "toolkit")):
     if os.path.isdir(cand):
@@ -200,7 +200,7 @@ def judge_batch(chat, items):
 
 
 def main():
-    from palantir_client import chat
+    from llm_client import chat
 
     rows = load_active()
     rows = dedup_near(rows)

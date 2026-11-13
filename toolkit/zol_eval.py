@@ -5,7 +5,7 @@ PRINCÍP (vedúcko): model NIKDY nehodnotí SÁM seba. Hodnotitelia = vždy tie 
 z trojice {opus, gpt, gemini}, ktoré NEgenerovali. Opus píše → gemini+gpt hodnotia;
 gemini píše → opus+gpt; atď. Rovnaký ensemble vzor ako multi_model_chapter.py (§11).
 
-Cez Palantir trojicu (palantir_client.chat). Skóre 0-1 na 4 kritériá + celkom + dôvod.
+Cez trojicu modelov (llm_client.chat). Skóre 0-1 na 4 kritériá + celkom + dôvod.
 AGREGÁCIA = MIN z dvoch hodnotiteľov (prísnejší gate = menej falošných "hotovo").
 Konfigurovateľné cez ZOL_EVAL_AGG=min|avg.
 
@@ -80,7 +80,7 @@ def _parse_score(raw):
 def evaluate(zadanie, odpoved, generator, eval_system=None):
     """Cross-model skóre. Judges = ostatné dva modely. Fail-open na zlyhaný judge.
     eval_system = custom rubrika (napr. pre návrhy iné kritériá); default = odpovede."""
-    from palantir_client import chat
+    from llm_client import chat
     sys_prompt = eval_system or EVAL_SYSTEM
     judges = _judges_for(generator)
     per_judge = {}
@@ -124,7 +124,7 @@ def evaluate(zadanie, odpoved, generator, eval_system=None):
 
 def refine_loop(zadanie, generator="opus", threshold=0.75, max_rounds=2):
     """Generuj → skóruj → ak < prah, daj feedback a prepíš. Max N kôl. Fail-open."""
-    from palantir_client import chat
+    from llm_client import chat
     history = []
     odpoved = chat(zadanie, model=generator, system=GEN_SYSTEM, max_tokens=GEN_MAX_TOKENS).strip()
     for rnd in range(1, max_rounds + 1):

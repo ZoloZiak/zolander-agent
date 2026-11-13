@@ -177,7 +177,7 @@ pozicie + d3-free (raw Three.js importmap). Spustenie:
   pred likvidaciou pobocky" = zase sum; distribucia: p50 cos 0.53, len 56/434 nad 0.6). Preto:
   `toolkit/gemma_cross_llm.py` = FAZA1 embed oba korpusy cez gemma_embed_server :8901 (mode=document,
   cache state/gemma_vecs.npz, l2norm s osetrenim NULOVEHO vektora inak divide-by-zero + osetri knizne
-  atomy <12 znakov), FAZA2 Gemma cosine top-K=8 kandidatov na spomienku, FAZA3 OPUS (palantir_client
+  atomy <12 znakov), FAZA2 Gemma cosine top-K=8 kandidatov na spomienku, FAZA3 OPUS (llm_client
   chat, system=prisny posudzovatel, davka 6, resume cross_llm.progress) rozhodne ktory kandidat REALNE
   obsahovo suvisi -> {best_gid|null, strength, reason}. Prah MIN_STRENGTH 0.5. Vystup state/cross_bridges.json.
   VYSLEDOK: z 434 spomienok Opus potvrdil len 23 mostov (z povodnych 140 YAR-sumovych) — a TIE davaju
@@ -201,7 +201,7 @@ pozicie + d3-free (raw Three.js importmap). Spustenie:
   suvisi (prisny system prompt, default null, sila 0-1 + dovod), (3) most = LEN Opusom potvrdeny par
   s jeho zdovodnenim v tooltipe, sila=jas/hrubka ciary. Nastroje (SUKROMNE, citaju zolo2.0):
   toolkit/gemma_cross.py (diagnostika distribucie), toolkit/gemma_cross_llm.py (hybrid, resumovatelny:
-  gemma_vecs.npz cache + cross_llm.progress; palantir_client.chat(system=...) davka 6, prah 0.5;
+  gemma_vecs.npz cache + cross_llm.progress; llm_client.chat(system=...) davka 6, prah 0.5;
   osetruje divide-by-zero z prazdnych/kratkych textov -> l2norm s n[n==0]=1 + book min len 12).
   Vystup state/cross_bridges.json. PITFALL: prazdne/kratke texty daju nulovy Gemma vektor -> matmul
   divide-by-zero warning + falosne vysoke skore v top parov; filtruj kratke texty PRED embedom.

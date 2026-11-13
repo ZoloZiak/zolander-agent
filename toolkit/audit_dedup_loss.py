@@ -18,7 +18,7 @@ OUT = os.path.join(ROOT, "state/dedup_loss_audit.json")
 sys.path.insert(0, os.path.join(ROOT, "toolkit"))
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 sys.path.insert(0, os.path.expanduser("~/projects/zolo2.0/toolkit"))
-from palantir_client import chat  # noqa: E402
+from llm_client import chat  # noqa: E402
 
 # --- nacitaj zijuci index ---
 idx = {}

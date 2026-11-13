@@ -12,7 +12,7 @@ Deterministicky rozhoduje OPUS (reasoning, nie embed). Fail-open: chyba -> "UNKN
 
 CLI:  echo '{"claim":"...","candidates":[{"id":1,"text":"..."}]}' | mem_support.py
 alebo importovatelne: from mem_support import support_check
-Bezi pod .venv-yar (palantir_client). Model prepisatelny ZOL_SUPPORT_MODEL (default opus).
+Bezi pod .venv-yar (llm_client). Model prepisatelny ZOL_SUPPORT_MODEL (default opus).
 """
 import os
 import re
@@ -39,7 +39,7 @@ def support_check(claim, candidates, model=MODEL):
     if not candidates:
         return []
     try:
-        from palantir_client import chat
+        from llm_client import chat
     except Exception:
         return [{"id": c["id"], "verdict": "UNKNOWN", "why": "checker nedostupny"} for c in candidates]
     lines = [f"TVRDENIE: {claim}", "", "SPOMIENKY:"]

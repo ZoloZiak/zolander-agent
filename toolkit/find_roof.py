@@ -21,7 +21,7 @@ CLI:
   $VPY find_roof.py --id 123                 # navrhni strechu pre uzol 123 (s Opus)
   $VPY find_roof.py --id 123 --no-llm        # len cosine+gate, bez LLM (lacne/offline)
   $VPY find_roof.py --id 123 --topk 20 --dry # neuklada navrh, len vypise
-kde $VPY = /Users/__USER__/.local/share/uv/tools/vmlx/bin/python (numpy; LLM cez palantir_client).
+kde $VPY = /Users/__USER__/.local/share/uv/tools/vmlx/bin/python (numpy; LLM cez llm_client).
 """
 import os
 import sys
@@ -202,9 +202,9 @@ def _ask_opus(child_id, texts, gc, model):
     sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
     sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
     try:
-        from palantir_client import chat
+        from llm_client import chat
     except Exception as e:
-        raise SystemExit(f"palantir_client nedostupny ({e!r}); pouzi --no-llm")
+        raise SystemExit(f"llm_client nedostupny ({e!r}); pouzi --no-llm")
     lines = "\n".join(f"[{c['id']}] {c['text']}" for c in gc)
     prompt = (f"Mas spomienku a zoznam kandidatnych RODICOVSKYCH uzlov (vseobecnejsi/nadradeny "
               f"pojem, pod ktory dieta patri v hierarchii).\n\n"

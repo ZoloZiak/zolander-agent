@@ -15,7 +15,7 @@ Tu je jeho verzia pre nas stack, s tvrdymi poistkami tohto prostredia:
      je VALIDNY iba ak cielove anchory teraz PRECHADZAJU a NEVZNIKLA regresia (exit 2).
      Nevalidovany navrh sa NEoznaci za hotovy — presne "action != completion".
   4) VOLITELNA LLM VRSTVA (--llm): obohati deterministicku diagnozu o prirodzeny
-     repair-plan cez palantir_client.chat (opus). FAIL-OPEN: bez LLM ostane rule-based.
+     repair-plan cez llm_client.chat (opus). FAIL-OPEN: bez LLM ostane rule-based.
 
 Toto NIE je plna RSI slucka co sama prepisuje kod — to by na monitorovanom
 Macu bola pistol namierena na nohu. Je to DIAGNOSTIK + NAVRHAR + validator; ruku na
@@ -127,9 +127,9 @@ def diagnose(report, use_llm=False):
 
 def _llm_plan(diag):
     """Volitelne: obohat deterministicku diagnozu o prirodzeny repair-plan.
-    FAIL-OPEN — ak LLM/palantir nedostupny, vrat None (rule-based directives staci)."""
+    FAIL-OPEN — ak LLM nedostupny, vrat None (rule-based directives staci)."""
     try:
-        from palantir_client import chat
+        from llm_client import chat
     except Exception as e:
         return None
     sysmsg = ("Si diagnostik agent-harnessu. Dostanes strukturovane zlyhania checker "

@@ -95,8 +95,7 @@ DIZAJN (durable-unattended-batch-jobs vzor, overéí naostro):
   (model kazí diakritiku), parujeme cez id. Verbatim text inject LOKÁLNE z indexu.
 - retry kaskáda per batch: celý → polovice → per-item; chybajúce id → log FAIL, ďalší tik
   doberie. Nikdy nefabrikuje verdikt.
-- `palantir_client` je v `~/projects/common/` (reorg 2026-09), NIE zolo2.0/toolkit ako
-  hovorí starý skill — daj OBE cesty na sys.path.
+- `llm_client` je v `toolkit/` tohto repa (stdlib), ďalšie cesty na sys.path netreba.
 - launchd `pl.zolander.forget-audit`: StartCalendarInterval 04:15 (PO dream 03:00 čo plní
   frontu), NIE StartInterval — agent dobehne frontu a spí, netreba tikať á N min.
   `--all --notify` → po behu push report cez zolander_notify.py (fail-open). ProcessType
@@ -141,7 +140,7 @@ kľúč je **fresh session/proces každý tick** → nikdy nenarazí na 200k kon
 ŠTYRI KUSY:
 - (a) PROGRESS na disku: `work/<uloha>/progress.json` {done, failed, total, next_chunk,
   uloha}. Zdroj pravdy — NIKDY nedôveruj self-reportu agenta, over z disku.
-- (b) `zolander_work.py` (S LLM cez Palantir/agy stack): tick = načítaj progress →
+- (b) `zolander_work.py` (S LLM cez llm_client/agy stack): tick = načítaj progress →
   vezmi JEDEN chunk → fix+verify → atomický zápis (tmp + os.replace) → zapíš progress →
   EXIT. Idempotentný resume: `already_done()` testuje ŠTRUKTÚRU (počet riadkov + povinné
   polia), NIE hodnoty (inak prerobí staré legitímne položky).

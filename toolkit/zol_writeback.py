@@ -31,7 +31,7 @@ SOTA principy (arxiv 2504.19413 Mem0, 2502.12110 A-MEM, survey 2505.00675):
   WRITE != raw turn. LLM extrahuje 3-8 salientnych faktov s typom+salience.
   Fail-open: chyba pri jednej session NEzhodi cely tick (log + pokracuj).
 
-Beh: cez launchd tick alebo rucne. Interpret /usr/bin/python3 (palantir_client +
+Beh: cez launchd tick alebo rucne. Interpret /usr/bin/python3 (llm_client +
 sqlite3 = stdlib+urllib; zol_mem.py remember si sam riesi venv-yar embedding cez
 subprocess vo vnutri). NEbezi embedder priamo tu.
 
@@ -62,7 +62,7 @@ SYS_PY = "/usr/bin/python3"
 # Preto remember MUSI ist cez venv-yar interpreter.
 VENV_PY = os.path.join(ZOL_ROOT, ".venv-yar", "bin", "python")
 ZOL_MEM = os.path.join(ZOL_ROOT, "toolkit", "zol_mem.py")
-# palantir_client zije v zolo2.0 toolkite
+# llm_client je v tomto toolkite
 sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
 
@@ -201,7 +201,7 @@ def fetch_new_transcript(conn, session_id, after_id):
 
 def extract_facts(transcript_text):
     """LLM extrakcia salientnych faktov. Vrati zoznam dict alebo []."""
-    from palantir_client import chat
+    from llm_client import chat
     prompt = ("Transkript session (extrahuj salientne fakty):\n\n"
               + transcript_text)
     resp = chat(prompt, model=EXTRACT_MODEL, system=EXTRACT_SYSTEM, max_tokens=4000)

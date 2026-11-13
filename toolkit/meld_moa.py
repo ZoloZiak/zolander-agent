@@ -70,7 +70,7 @@ def _parse(txt):
 
 
 def main():
-    from palantir_client import chat
+    from llm_client import chat
     import numpy as np
 
     n_pairs = int(sys.argv[1]) if len(sys.argv) > 1 else 12

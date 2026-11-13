@@ -42,9 +42,9 @@ def chat(prompt, model="opus", max_tokens=200, system=None):
     return "[2, 1]"
 
 
-pc = types.ModuleType("palantir_client")
+pc = types.ModuleType("llm_client")
 setattr(pc, "chat", chat)
-sys.modules["palantir_client"] = pc
+sys.modules["llm_client"] = pc
 
 cands = [
     {"id": 1, "text": "prvý kandidát"},

@@ -7,7 +7,7 @@ nemal rozlišovaciu silu. Tento test dokazuje, že evaluate() teraz volá
 judge_scale.audit() na zozbierané per-judge 'celkom' skóre a pripája verdikt do
 výstupu ako 'scale_audit', bez zmeny existujúceho kontraktu (celkom/per_judge/agg).
 
-Stubuje palantir_client.chat (žiadny live LLM) → deterministický offline test.
+Stubuje llm_client.chat (žiadny live LLM) → deterministický offline test.
 """
 import os
 import sys
@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (re
 
 
 def _load_zol_eval_with_scores(scores):
-    """Naimportuj zol_eval so stubnutým palantir_client.chat, čo vracia dané skóre.
+    """Naimportuj zol_eval so stubnutým llm_client.chat, čo vracia dané skóre.
 
     scores = list čísel; každý ďalší judge dostane ďalšie číslo (round-robin).
     """
@@ -32,9 +32,9 @@ def _load_zol_eval_with_scores(scores):
         return ('{"vernost":%s,"vecnost":%s,"ton":%s,"uzitocnost":%s,'
                 '"celkom":%s,"dovod":"stub"}' % (val, val, val, val, val))
 
-    pc = types.ModuleType("palantir_client")
+    pc = types.ModuleType("llm_client")
     setattr(pc, "chat", _fake_chat)
-    sys.modules["palantir_client"] = pc
+    sys.modules["llm_client"] = pc
 
     if "zol_eval" in sys.modules:
         del sys.modules["zol_eval"]
@@ -84,8 +84,8 @@ def test_no_scores_no_crash():
     """Keď všetci judgeovia zlyhajú (žiadne skóre), scale_audit nespadne."""
     ze = _load_zol_eval_with_scores([1.0])
     # vynúť zlyhanie: stub chat vráti nezmysel
-    import palantir_client
-    palantir_client.chat = lambda *a, **k: "toto nie je JSON"
+    import llm_client
+    llm_client.chat = lambda *a, **k: "toto nie je JSON"
     out = ze.evaluate("zadanie", "odpoved", generator="opus")
     _check("celkom=None keď nič neparsuje", out.get("celkom") is None)
     # scale_audit buď chýba, alebo verdikt NO_DATA — nesmie spadnúť

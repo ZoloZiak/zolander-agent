@@ -41,7 +41,7 @@ ZOL_MEM = os.path.join(ROOT, "toolkit", "zol_mem.py")
 VENV_YAR = os.path.join(ROOT, ".venv-yar", "bin", "python")
 EMBED = os.path.join(ROOT, "toolkit", "embed_yar.py")
 
-# palantir_client (chat/LLM) zije v zolo2.0/toolkit; embedding je ODDELENY
+# llm_client (chat/LLM) je v tomto toolkite; embedding je ODDELENY
 # subprocess do VENV_YAR (torch tam, nie tu).
 sys.path.insert(0, os.path.join(HOME, "projects", "zolo2.0", "toolkit"))
 sys.path.insert(0, os.path.expanduser("~/projects/common"))  # infra->common (reorg 2026-09)
@@ -143,7 +143,7 @@ def ldist(a, b):
 
 def name_new_pattern(situation, model="opus"):
     """LLM pomenuje NOVY kandidatsky vzorec pre danu situaciu (navrh)."""
-    from palantir_client import chat
+    from llm_client import chat
     system = ("Si Zolander — dekonstrukcny nastroj na luciditu. Pomenuvas opakujuce "
               "sa VZORCE/skripty za konkretnymi situaciami (v situaciach, ludoch aj "
               "v samotnom userovi). Ziadna lichotka. Po slovensky.")
@@ -164,7 +164,7 @@ def name_new_pattern(situation, model="opus"):
 def pattern_matches(situation, pattern_text, model="gpt-mini"):
     """LLM re-check: je situacia INSTANCIOU daneho vzorca? (spaja naprieic domenami,
     kde cisty embedding zlyha). Vrati True/False + kratke zdovodnenie."""
-    from palantir_client import chat
+    from llm_client import chat
     prompt = (f"Vzorec:\n{pattern_text}\n\nSituacia:\n{situation}\n\n"
               "Je tato situacia INSTANCIOU toho isteho vzorca (aj ked je z inej "
               "oblasti zivota)? Vrat IBA JSON: {\"match\":true|false,\"why\":\"<1 veta>\"}")
@@ -237,7 +237,7 @@ def mine(model="opus"):
     # embedding je vnutri llm_cluster.
     from cluster_llm import llm_cluster
     groups = llm_cluster(rows, embed_many, ldist, RECHECK_WINDOW, model=model)
-    from palantir_client import chat
+    from llm_client import chat
     system = ("Si Zolander. Z opakujucich sa udalosti pomenuj VZOREC (nazov 2-4 slova "
               "+ 1 veta). Po slovensky, ziadna lichotka. JSON {\"name\":..,\"desc\":..}.")
     candidates = []

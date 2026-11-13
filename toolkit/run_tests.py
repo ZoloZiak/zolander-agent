@@ -80,6 +80,8 @@ TESTS = [
      "test_decay_salience_bump.py", False),
     ("Scaffold gate: deductive bez premís REFUSED, scaffolding istota (spike010)", SYS,
      "test_scaffold_gate.py", False),
+    ("llm_client: aliasy, routing, request shape (offline, bez siete)", SYS,
+     "test_llm_client.py", False),
     ("fold_singletons (L0 zlep vs L2 split)", VPY,
      "test_cluster_fold.py", True),   # potrebuje embed
     ("LLM clustering MERGE+SPLIT (Opus)", VPY,
