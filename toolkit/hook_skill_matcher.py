@@ -74,8 +74,8 @@ STOPWORDS = {
 BOOST = [
     # --- lokalny AI stack (__USER__) ---
     (r"\b(palantir|agy|bridge|fallback|embed\w*|vektor\w*|vector\w*|"
-     r"hyperspace\w*|orbstack|vmlx|mlx|gpu\s*embed\w*|ssl|proxy|"
-     r"corp|cert\w*|rate.?limit|local.?llm|lokaln\w*\s*llm)\b",
+     r"hyperspace\w*|orbstack|vmlx|mlx|gpu\s*embed\w*|"
+     r"rate.?limit|local.?llm|lokaln\w*\s*llm)\b",
      "ziak-local-ai-stack", 5),
     # --- Hermes shell hooky ---
     (r"\b(hook|hooky|hookov|pre_llm|pre_verify|pre_tool|shell.?hook|"
@@ -93,9 +93,6 @@ BOOST = [
      "zolo-atom-enrichment", 3),
     (r"\b(zolander|persona|companion|partak|mentor|identita)\b",
      "zolander", 3),
-    # --- sandbox / macos workflow ---
-     r"locked.?down)\b",
-     "ziak-macos-workflows", 4),
     # --- Zolander interne: loop/dream/brief/watchdog/decay/pamat (NIE durable-batch!) ---
     (r"\b(loop|dream|sen\b|brief|watchdog|heartbeat|decay|zabuda\w*|"
      r"zabija\s*pam\w*|pamat\w*\s*(stoji|nejde|zabuda)|integrity|"

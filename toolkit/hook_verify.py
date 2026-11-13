@@ -100,7 +100,7 @@ def _mechanical(changed):
 # ---------- MoA vrstva (opt-in) ----------
 
 def _ensure_env():
-    """Hook bezi pod /usr/bin/python3 bez .zshrc -> dopln token + SSL sam."""
+    """Hook bezi pod /usr/bin/python3 bez .zshrc -> dopln token sam."""
     if not os.environ.get("PALANTIR_TOKEN"):
         try:
             for line in open(os.path.expanduser("~/.zsh_secrets"), encoding="utf-8"):
@@ -110,7 +110,6 @@ def _ensure_env():
                     break
         except Exception:
             pass
-        if os.path.isfile(b):
 
 
 def _throttled():

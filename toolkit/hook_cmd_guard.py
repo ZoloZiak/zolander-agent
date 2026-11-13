@@ -45,9 +45,6 @@ CHAINING = re.compile(r"(\s&&\s|\s\|\|\s|;\s|\s;)")       # && || ; (NIE pipe)
 SHELL_WRAP = re.compile(r"\b(bash|zsh|sh)\s+-c\b")        # bash -c "..."
 HEREDOC = re.compile(r"<<-?\s*['\"]?\w+")                 # heredoc <<EOF
 
-# 2) sandbox-triggery z pamate (bezpečnostné alerty).
-)
-
 # 3) Deštruktivne mazanie.
 # 3a) rm s r/R AJ f/F v hocijakej kombinacii/poradi/velkosti pismen + dlha forma.
 #     (`rm -rf`, `-Rf`, `-fr`, `-r -f`, `--recursive --force`). Blok VSADE —
